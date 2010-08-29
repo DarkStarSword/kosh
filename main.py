@@ -5,7 +5,7 @@ version = '0.1' #FIXME: use git describe if from git repository
 passdb_default = '~/.koshdb'
 
 from util.decorators import *
-from util.err import urwidShowErr
+import koshcurses.err
 
 
 def getParameters():
@@ -25,11 +25,11 @@ def getParameters():
     parser.error('Too many arguments')
   return options
 
-@handleErr(urwidShowErr)
+@handleErr(koshcurses.err.showErr)
 def main():
-  import kosh
+  import kosh,os
   options = getParameters()
-  db = kosh.KoshDB(options.passdb) 
+  db = kosh.KoshDB(os.path.expanduser(options.passdb), 'foobar') 
 
 if __name__ == '__main__':
   main()

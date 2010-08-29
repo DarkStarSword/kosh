@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
-def urwidShowErr(msg):
+def showErr(msg):
   try:
     import urwid
     lb = urwid.ListBox(
