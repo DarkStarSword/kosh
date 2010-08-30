@@ -6,6 +6,7 @@ passdb_default = '~/.koshdb'
 
 from util.decorators import *
 import koshcurses.err
+import koshcurses.dialog
 
 
 def getParameters():
@@ -29,7 +30,10 @@ def getParameters():
 def main():
   import kosh,os
   options = getParameters()
-  db = kosh.KoshDB(os.path.expanduser(options.passdb), 'foobar') 
+  def prompt(message):
+    dialog = koshcurses.dialog.inputDialog(message=message)
+    return dialog.showModal()
+  db = kosh.KoshDB(os.path.expanduser(options.passdb), prompt)
 
 if __name__ == '__main__':
   main()

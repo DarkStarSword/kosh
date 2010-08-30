@@ -3,6 +3,7 @@
 
 import os
 import fcntl
+import Crypto.Hash.SHA
 import Crypto.Hash.SHA256
 import Crypto.Cipher.AES
 import base64
@@ -15,9 +16,9 @@ def randBits(size):
 class KoshDB(object):
   FILE_HEADER = 'K05Hv0 UNSTABLE\n'
 
-	def __init__(self, filename, masterPass):
+	def __init__(self, filename, prompt):
     self.filename = filename
-    self._masterPass = masterPass #prompt
+    self._masterPass = prompt(message='Enter master passphrase', title='Kosh')
 
     if os.path.isfile(filename):
       self._open(filename)
@@ -26,10 +27,10 @@ class KoshDB(object):
 
   def _create(self, filename):
     self._masterKey = randBits(256)
-    #self._masterPass = prompt
     self._write(filename)
 
   def _write(self, filename):
+    # FIXME: Locking to avoid separate processes clobbering each other
     import tempfile
     with tempfile.NamedTemporaryFile(mode='wb', delete=False,
         prefix=os.path.basename(filename),
@@ -64,15 +65,20 @@ class KoshDB(object):
     s = randBits(256)
     k = ''.join([chr(ord(a) ^ ord(b)) for (a,b) in zip(h,s)])
     a = Crypto.Cipher.AES.new(k)
-    e = a.encrypt(self._masterKey)
+    checksum = Crypto.Hash.SHA256.new(self._masterKey).digest()
+    e = a.encrypt(self._masterKey + checksum)
     return base64.encodestring(e+s).replace('\n','')
 
   def _decMasterKey(self, ciphertext):
     d = base64.decodestring(ciphertext)
-    p = 'foobar' #Fixme: prompt
-    h = Crypto.Hash.SHA256.new(p).digest()
-    e = d[:32]
-    s = d[32:]
+    h = Crypto.Hash.SHA256.new(self._masterPass).digest()
+    e = d[:-256/8]
+    s = d[-256/8:]
     k = ''.join([chr(ord(a) ^ ord(b)) for (a,b) in zip(h,s)])
     a = Crypto.Cipher.AES.new(k)
-    return a.decrypt(e)
+    deciphered = a.decrypt(e)
+    key      = deciphered[:-Crypto.Hash.SHA256.digest_size]
+    checksum = deciphered[-Crypto.Hash.SHA256.digest_size:]
+    if checksum != Crypto.Hash.SHA256.new(key).digest():
+      raise Exception('Bad decryption key - checksum failure')
+    return key
