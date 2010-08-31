@@ -30,8 +30,8 @@ def getParameters():
 def main():
   import koshdb,os
   options = getParameters()
-  def prompt(message, title):
-    dialog = koshcurses.dialog.inputDialog(message=message, title=title)
+  def prompt(message):
+    dialog = koshcurses.dialog.inputDialog(message=message)
     return dialog.showModal()
   db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt)
 

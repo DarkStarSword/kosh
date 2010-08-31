@@ -23,7 +23,7 @@ class inputDialog(urwid.WidgetWrap):
   def showModal(self, parent=None):
     if parent is None:
       parent = urwid.SolidFill()
-    overlay = urwid.Overlay(self, parent, 'center', ('relative', self.width), 'middle', self.height)
+    overlay = urwid.Overlay(self, parent, 'center', self.width, 'middle', self.height)
     def exit_on_input(input):
       if input.lower() in ('enter'):
         raise urwid.ExitMainLoop()
