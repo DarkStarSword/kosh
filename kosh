@@ -28,12 +28,12 @@ def getParameters():
 
 @handleErr(koshcurses.err.showErr)
 def main():
-  import kosh,os
+  import koshdb,os
   options = getParameters()
-  def prompt(message):
-    dialog = koshcurses.dialog.inputDialog(message=message)
+  def prompt(message, title):
+    dialog = koshcurses.dialog.inputDialog(message=message, title=title)
     return dialog.showModal()
-  db = kosh.KoshDB(os.path.expanduser(options.passdb), prompt)
+  db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt)
 
 if __name__ == '__main__':
   main()
