@@ -48,7 +48,8 @@ class _masterKey(object):
   # TO CONSIDER: Override __getattribute__ to enforce that only weak references to the key are ever given out
 
   def _touch(self):
-    self._timer = threading.Timer(self.TIMEOUT, self._expire)
+    import weakref # Prevent timer keeping self alive
+    self._timer = threading.Timer(self.TIMEOUT, weakref.proxy(self._expire))
     self._timer.start()
 
   def _expire(self):
@@ -57,6 +58,10 @@ class _masterKey(object):
       del self._timer
     if hasattr(self, '_key'):
       del self._key
+
+  def __del__(self):
+    print 'del'
+    self._expire()
 
   @staticmethod
   def _enc(key, passphrase):
@@ -95,9 +100,6 @@ class KoshDB(object):
     else:
       self._create(filename, passphrase, prompt)
 
-  def __del__(self):
-    for k in self._masterKeys:
-      k._expire() # Necessary to shut down key expiry timer threads
 
   def _create(self, filename, passphrase, prompt):
     if prompt('Confirm master passphrase:') != passphrase:
