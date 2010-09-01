@@ -7,17 +7,20 @@ import Crypto.Hash.SHA
 import Crypto.Hash.SHA256
 import Crypto.Cipher.AES
 import base64
+import threading
 
 def randBits(size):
   import Crypto.Random
   return Crypto.Random.get_random_bytes(size/8)
 
 class ChecksumFailure(Exception): pass
+class KeyExpired(Exception): pass
 
 class _masterKey(object):
   # TODO: Add timeout
   # TODO: Protect self._key (mprotect, accessor methods)
   BLOB_PREFIX = 'k:'
+  TIMEOUT = 60
 
   def __init__(self, passphrase, blob=None):
     if blob is None:
@@ -30,6 +33,30 @@ class _masterKey(object):
 
   def __str__(self):
     return _masterKey.BLOB_PREFIX + self._blob
+
+  def __setattr__(self, name, val):
+    if name == '_key': self._expire()
+    object.__setattr__(self, name, val)
+    if name == '_key': self._touch()
+
+  def __getattr__(self, name):
+    if name == '_key':
+      # Only called if _key is not present
+      raise KeyExpired()
+    raise AttributeError()
+
+  # TO CONSIDER: Override __getattribute__ to enforce that only weak references to the key are ever given out
+
+  def _touch(self):
+    self._timer = threading.Timer(self.TIMEOUT, self._expire)
+    self._timer.start()
+
+  def _expire(self):
+    if hasattr(self, '_timer'):
+      self._timer.cancel()
+      del self._timer
+    if hasattr(self, '_key'):
+      del self._key
 
   @staticmethod
   def _enc(key, passphrase):
@@ -67,6 +94,10 @@ class KoshDB(object):
       self._open(filename, passphrase, prompt)
     else:
       self._create(filename, passphrase, prompt)
+
+  def __del__(self):
+    for k in self._masterKeys:
+      k._expire() # Necessary to shut down key expiry timer threads
 
   def _create(self, filename, passphrase, prompt):
     if prompt('Confirm master passphrase:') != passphrase:
