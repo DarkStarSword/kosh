@@ -8,6 +8,8 @@ import Crypto.Hash.SHA256
 import Crypto.Cipher.AES
 import base64
 import threading
+import weakref
+import json
 
 def randBits(size):
   import Crypto.Random
@@ -25,34 +27,22 @@ class _masterKey(object):
   def __init__(self, passphrase, blob=None):
     if blob is None:
       self._key = randBits(256)
-      self._blob = self._enc(self._key, passphrase)
+      self._blob = self._encMasterKey(self._key, passphrase)
     else:
       assert(blob.startswith(_masterKey.BLOB_PREFIX))
       self._blob = blob[len(_masterKey.BLOB_PREFIX):]
-      self._key = self._dec(self._blob, passphrase)
+      self.unlock(passphrase)
 
-  def __str__(self):
-    return _masterKey.BLOB_PREFIX + self._blob
+  def unlock(self, passphrase):
+    self._key = self._decMasterKey(self._blob, passphrase)
 
-  def __setattr__(self, name, val):
-    if name == '_key': self._expire()
-    object.__setattr__(self, name, val)
-    if name == '_key': self._touch()
-
-  def __getattr__(self, name):
-    if name == '_key':
-      # Only called if _key is not present
-      raise KeyExpired()
-    raise AttributeError()
-
-  # TO CONSIDER: Override __getattribute__ to enforce that only weak references to the key are ever given out
-
-  def _touch(self):
-    import weakref # Prevent timer keeping self alive
-    self._timer = threading.Timer(self.TIMEOUT, weakref.proxy(self._expire))
+  def touch(self):
+    # Prevent timer keeping self alive:
+    callback = weakref.proxy(self.expire)
+    self._timer = threading.Timer(self.TIMEOUT, callback)
     self._timer.start()
 
-  def _expire(self):
+  def expire(self):
     if hasattr(self, '_timer'):
       self._timer.cancel()
       del self._timer
@@ -60,11 +50,58 @@ class _masterKey(object):
       del self._key
 
   def __del__(self):
-    print 'del'
-    self._expire()
+    # Cancel any running timers in other threads
+    self.expire()
+
+  def __str__(self):
+    return _masterKey.BLOB_PREFIX + self._blob
+
+  def __setattr__(self, name, val):
+    if name == '_key': self.expire()
+    object.__setattr__(self, name, val)
+    if name == '_key': self.touch()
+
+  def __getattr__(self, name):
+    if name == '_key':
+      # Only called if _key is not present
+      raise KeyExpired()
+    raise AttributeError()
+
+  def encrypt(self, data):
+    """
+    Take a chunk of data and encrypt it using this key.
+    Raises KeyExpired if this key has timed out.
+    """
+    def pad(data, multiple):
+      assert(multiple < 256)
+      padding = multiple - ((len(data) + 1) % multiple)
+      return data + '\0'*padding + chr(padding+1)
+    a = Crypto.Cipher.AES.new(self._key)
+    checksum = Crypto.Hash.SHA.new(data).digest()
+    e = a.encrypt(pad(data + checksum, Crypto.Cipher.AES.block_size))
+    return base64.encodestring(e).replace('\n','')
+
+
+  def decrypt(self, blob):
+    """
+    Take a base64 encoded and encrypted blob and attempt to decrypt it using this key.
+    Raises ChecksumFailure if this key was not used to encrypt the blob.
+    Raises KeyExpired if this key has timed out.
+    """
+    def unpad(data):
+      padding = ord(data[-1:])
+      return data[:-padding]
+    d = base64.decodestring(blob)
+    a = Crypto.Cipher.AES.new(self._key)
+    deciphered = unpad(a.decrypt(d))
+    decrypted = deciphered[:-Crypto.Hash.SHA.digest_size]
+    checksum  = deciphered[-Crypto.Hash.SHA.digest_size:]
+    if checksum != Crypto.Hash.SHA.new(decrypted).digest():
+      raise ChecksumFailure()
+    return decrypted
 
   @staticmethod
-  def _enc(key, passphrase):
+  def _encMasterKey(key, passphrase):
     h = Crypto.Hash.SHA256.new(passphrase).digest()
     s = randBits(256)
     k = ''.join([chr(ord(a) ^ ord(b)) for (a,b) in zip(h,s)])
@@ -74,7 +111,7 @@ class _masterKey(object):
     return base64.encodestring(e+s).replace('\n','')
 
   @staticmethod
-  def _dec(blob, passphrase):
+  def _decMasterKey(blob, passphrase):
     d = base64.decodestring(blob)
     h = Crypto.Hash.SHA256.new(passphrase).digest()
     e = d[:-256/8]
@@ -88,7 +125,34 @@ class _masterKey(object):
       raise ChecksumFailure()
     return key
 
-class KoshDB(object):
+class passEntry(dict):
+  BLOB_PREFIX = 'p:'
+
+  def __init__(self, masterKey, blob=None):
+    self._masterKey = masterKey
+    if blob is not None:
+      assert(blob.startswith(passEntry.BLOB_PREFIX))
+      self._blob = blob[len(passEntry.BLOB_PREFIX):]
+      contents = masterKey.decrypt(self._blob)
+      self.update(json.loads(contents))
+
+  def __str__(self):
+    return passEntry.BLOB_PREFIX + self._blob
+
+  def __setitem__(self, name, val):
+    dict.__setitem__(self, name, val)
+    self._enc()
+
+  def __delitem__(self, name):
+    dict.__delitem__(self, name)
+    self._enc()
+
+  def _enc(self):
+    serialise = json.dumps(self)
+    self._blob = self._masterKey.encrypt(serialise)
+   
+
+class KoshDB(dict):
   FILE_HEADER = 'K05Hv0 UNSTABLE\n'
 
   def __init__(self, filename, prompt):
@@ -100,11 +164,13 @@ class KoshDB(object):
     else:
       self._create(filename, passphrase, prompt)
 
+  #def __getitem__(self, entry):
 
   def _create(self, filename, passphrase, prompt):
     if prompt('Confirm master passphrase:') != passphrase:
       raise Exception('FIXME: passphrases do not match')
     self._masterKeys = [_masterKey(passphrase)]
+    self._entries = {}
     self._write(filename)
 
   def _write(self, filename):
@@ -132,6 +198,7 @@ class KoshDB(object):
         (key, passphrase) = self._unlockMasterKey(len(self._masterKeys), line, passphrases, prompt)
         self._masterKeys.append(key)
         passphrases.add(passphrase)
+      #elif line.startswith(_XXX.BLOB_PREFIX):
 
   def _unlockMasterKey(self, idx, blob, passphrases, prompt):
     for passphrase in passphrases:
@@ -158,3 +225,22 @@ class KoshDB(object):
 
   def _changeMasterPass(self, oldpass, newpass):
     raise Exception('unimplemented')
+
+if __name__ == '__main__':
+  import tempfile
+  filename = tempfile.mktemp()
+  try:
+    def prompt(*args):
+      return 'foobar'
+    db = KoshDB(filename, prompt)
+    e = passEntry(db._masterKeys[0]) # FIXME: Doing this creates a strong reference to the master key - timers will not automatically be destroyed
+    e['foo'] = 'bar'
+    print e._blob
+
+    d = passEntry(db._masterKeys[0], passEntry.BLOB_PREFIX + e._blob)
+    print d['foo']
+    del e
+    del d
+    del db
+  finally:
+    os.remove(filename)
