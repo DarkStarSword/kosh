@@ -139,7 +139,7 @@ class passEntry(dict):
     elif name is not None:
       self.name = name
     else:
-      raise Exception('Need either a name or an encrypted blob')
+      self.name = ''
 
   def __str__(self):
     return self.BLOB_PREFIX + self._blob

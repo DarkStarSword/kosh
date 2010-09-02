@@ -9,6 +9,7 @@ import sys
 from util.decorators import *
 import koshcurses.err
 import koshcurses.dialog
+import koshcurses.ui
 
 try:
   import Crypto
@@ -51,6 +52,8 @@ def main():
     dialog = koshcurses.dialog.inputDialog(message=message)
     return dialog.showModal()
   db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt)
+  u = koshcurses.ui.koshUI(db)
+  u.showModal()
 
 if __name__ == '__main__':
   main()
