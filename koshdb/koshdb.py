@@ -29,8 +29,8 @@ class _masterKey(object):
       self._key = randBits(256)
       self._blob = self._encMasterKey(self._key, passphrase)
     else:
-      assert(blob.startswith(_masterKey.BLOB_PREFIX))
-      self._blob = blob[len(_masterKey.BLOB_PREFIX):]
+      assert(blob.startswith(self.BLOB_PREFIX))
+      self._blob = blob[len(self.BLOB_PREFIX):]
       self.unlock(passphrase)
 
   def unlock(self, passphrase):
@@ -54,7 +54,7 @@ class _masterKey(object):
     self.expire()
 
   def __str__(self):
-    return _masterKey.BLOB_PREFIX + self._blob
+    return self.BLOB_PREFIX + self._blob
 
   def __setattr__(self, name, val):
     if name == '_key': self.expire()
@@ -128,16 +128,22 @@ class _masterKey(object):
 class passEntry(dict):
   BLOB_PREFIX = 'p:'
 
-  def __init__(self, masterKey, blob=None):
+  def __init__(self, masterKey, blob=None, name=None):
     self._masterKey = masterKey
     if blob is not None:
-      assert(blob.startswith(passEntry.BLOB_PREFIX))
-      self._blob = blob[len(passEntry.BLOB_PREFIX):]
+      assert(blob.startswith(self.BLOB_PREFIX))
+      self._blob = blob[len(self.BLOB_PREFIX):]
       contents = masterKey.decrypt(self._blob)
-      self.update(json.loads(contents))
+      decode = json.loads(contents)
+      self.name = decode[0]
+      self.update(decode[1])
+    elif name is not None:
+      self.name = name
+    else:
+      raise Exception('Need either a name or an encrypted blob')
 
   def __str__(self):
-    return passEntry.BLOB_PREFIX + self._blob
+    return self.BLOB_PREFIX + self._blob
 
   def __setitem__(self, name, val):
     dict.__setitem__(self, name, val)
@@ -148,7 +154,7 @@ class passEntry(dict):
     self._enc()
 
   def _enc(self):
-    serialise = json.dumps(self)
+    serialise = json.dumps((self.name, self))
     self._blob = self._masterKey.encrypt(serialise)
    
 
@@ -164,13 +170,10 @@ class KoshDB(dict):
     else:
       self._create(filename, passphrase, prompt)
 
-  #def __getitem__(self, entry):
-
   def _create(self, filename, passphrase, prompt):
     if prompt('Confirm master passphrase:') != passphrase:
       raise Exception('FIXME: passphrases do not match')
     self._masterKeys = [_masterKey(passphrase)]
-    self._entries = {}
     self._write(filename)
 
   def _write(self, filename):
@@ -182,6 +185,8 @@ class KoshDB(dict):
       fp.write(KoshDB.FILE_HEADER)
       for key in self._masterKeys:
         fp.write(str(key) + '\n')
+      for entry in self:
+        fp.write(str(entry) + '\n')
       fp.flush()
       if os.path.exists(filename):
         os.rename(filename, filename+'~')
@@ -198,7 +203,18 @@ class KoshDB(dict):
         (key, passphrase) = self._unlockMasterKey(len(self._masterKeys), line, passphrases, prompt)
         self._masterKeys.append(key)
         passphrases.add(passphrase)
-      #elif line.startswith(_XXX.BLOB_PREFIX):
+      elif line.startswith(passEntry.BLOB_PREFIX):
+        for key in self._masterKeys:
+          try:
+            entry = passEntry(key, line)
+          except ChecksumFailure:
+            continue
+          else:
+            self[entry['name']] = entry
+            break
+        else:
+          # Multi user mode may ignore this
+          raise ChecksumFailure()
 
   def _unlockMasterKey(self, idx, blob, passphrases, prompt):
     for passphrase in passphrases:
