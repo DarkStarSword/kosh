@@ -4,10 +4,27 @@
 version = '0.1' #FIXME: use git describe if from git repository
 passdb_default = '~/.koshdb'
 
+import sys
+
 from util.decorators import *
 import koshcurses.err
 import koshcurses.dialog
 
+try:
+  import Crypto
+except ImportError:
+  print 'ERROR: Python crypto library not found - Please install pycrypto (apt-get install python-crypto)'
+  sys.exit(1)
+else:
+  del Crypto
+
+try:
+  import urwid
+except ImportError:
+  print 'ERROR: Python curses library not found - Please install urwid (apt-get install python-urwid)'
+  sys.exit(1)
+else:
+  del urwid
 
 def getParameters():
   import optparse
