@@ -163,16 +163,20 @@ class KoshDB(dict):
 
   def __init__(self, filename, prompt):
     self.filename = filename
-    passphrase = prompt('Enter master passphrase:')
 
     if os.path.isfile(filename):
-      self._open(filename, passphrase, prompt)
+      self._open(filename, prompt)
     else:
-      self._create(filename, passphrase, prompt)
+      self._create(filename, prompt)
 
-  def _create(self, filename, passphrase, prompt):
-    if prompt('Confirm master passphrase:') != passphrase:
-      raise Exception('FIXME: passphrases do not match')
+  def _create(self, filename, prompt):
+    msg = 'New Password Database\nEnter passphrase:'
+    failmsg = 'Passphrases do not match!\n\n'+msg
+    while True:
+      passphrase = prompt(msg)
+      if prompt('Confirm passphrase:') == passphrase:
+        break
+      msg = failmsg
     self._masterKeys = [_masterKey(passphrase)]
     self._write(filename)
 
@@ -192,12 +196,12 @@ class KoshDB(dict):
         os.rename(filename, filename+'~')
       os.rename(fp.name, filename)
 
-  def _open(self, filename, passphrase, prompt):
+  def _open(self, filename, prompt):
     self.fp = open(filename, 'rb')
     self._readExpect(KoshDB.FILE_HEADER)
-    passphrases = set()
-    passphrases.add(passphrase)
     self._masterKeys = []
+    passphrase = prompt('Enter passphrase:')
+    passphrases = set(passphrase)
     for line in self.fp:
       if line.startswith(_masterKey.BLOB_PREFIX):
         (key, passphrase) = self._unlockMasterKey(len(self._masterKeys), line, passphrases, prompt)
