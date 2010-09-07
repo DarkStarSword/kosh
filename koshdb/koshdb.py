@@ -37,21 +37,20 @@ class _masterKey(object):
     self._key = self._decMasterKey(self._blob, passphrase)
 
   def touch(self):
-    # Prevent timer keeping self alive:
-    callback = weakref.proxy(self.expire)
-    self._timer = threading.Timer(self.TIMEOUT, callback)
+    self._timer = threading.Timer(self.TIMEOUT, self.expire)
     self._timer.start()
 
   def expire(self):
+    """ MUST be called to clean up threads, otherwise the program will not terminate until timeout """
     if hasattr(self, '_timer'):
       self._timer.cancel()
       del self._timer
     if hasattr(self, '_key'):
       del self._key
 
-  def __del__(self):
-    # Cancel any running timers in other threads
-    self.expire()
+  #def __del__(self):
+  #  # Cancel any running timers in other threads
+  #  self.expire()
 
   def __str__(self):
     return self.BLOB_PREFIX + self._blob
@@ -129,7 +128,7 @@ class passEntry(dict):
   BLOB_PREFIX = 'p:'
 
   def __init__(self, masterKey, blob=None, name=None):
-    self._masterKey = masterKey
+    self._masterKey = weakref.proxy(masterKey)
     if blob is not None:
       assert(blob.startswith(self.BLOB_PREFIX))
       self._blob = blob[len(self.BLOB_PREFIX):]
@@ -168,6 +167,10 @@ class KoshDB(dict):
       self._open(filename, prompt)
     else:
       self._create(filename, prompt)
+
+  def __del__(self):
+    for x in self._masterKeys:
+      x.expire()
 
   def _create(self, filename, prompt):
     msg = 'New Password Database\nEnter passphrase:'
