@@ -204,7 +204,8 @@ class KoshDB(dict):
     self._readExpect(KoshDB.FILE_HEADER)
     self._masterKeys = []
     passphrase = prompt('Enter passphrase:')
-    passphrases = set(passphrase)
+    passphrases = set()
+    passphrases.add(passphrase)
     for line in self.fp:
       if line.startswith(_masterKey.BLOB_PREFIX):
         (key, passphrase) = self._unlockMasterKey(len(self._masterKeys), line, passphrases, prompt)
