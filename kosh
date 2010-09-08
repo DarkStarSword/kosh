@@ -20,12 +20,12 @@ else:
   del Crypto
 
 try:
-  import urwid
+  from urwid import MainLoop as tmp
 except ImportError:
-  print 'ERROR: Python curses library not found - Please install urwid (apt-get install python-urwid)'
+  print 'ERROR: Python urwid library not found or too old - Please install urwid 0.9.9.1-1 or later (apt-get install python-urwid)'
   sys.exit(1)
 else:
-  del urwid
+  del tmp
 
 def getParameters():
   import optparse
