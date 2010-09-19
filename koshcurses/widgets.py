@@ -4,6 +4,16 @@
 import urwid
 import utf8
 
+class keymapwid(object):
+  keymap = {}
+  def keypress(self, size, key):
+    ret = super(keymapwid, self).keypress(size, key)
+    if ret is None: # Sibling class handled
+      return
+    if key in self.keymap:
+      getattr(self, self.keymap[key])(size, key)
+    return key
+
 class koshEdit(urwid.Edit):
   """ Subclass of urwid.Edit to handle ^u to kill line """
   def keypress(self, size, key):
@@ -27,14 +37,6 @@ class passwordEdit(koshEdit):
     """
     return self._caption + '*'*len(self._edit_text), self._attrib
 
-class keymapwid(object):
-  keymap = {}
-  def keypress(self, size, key):
-    if key in self.keymap:
-      getattr(self, self.keymap[key])(size, key)
-    else:
-      # Pass keypress to sibling class:
-      super(keymapwid, self).keypress(size, key)
 
 class LineColumns(urwid.WidgetWrap):
   vline = urwid.SolidFill(utf8.symbol('BOX DRAWINGS LIGHT VERTICAL'))
