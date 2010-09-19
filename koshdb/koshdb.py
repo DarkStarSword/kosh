@@ -183,6 +183,9 @@ class KoshDB(dict):
     self._masterKeys = [_masterKey(passphrase)]
     self._write(filename)
 
+  def write(self):
+    self._write(self.filename)
+
   def _write(self, filename):
     # FIXME: Locking to avoid separate processes clobbering each other
     import tempfile
@@ -191,9 +194,9 @@ class KoshDB(dict):
         dir=os.path.dirname(filename)) as fp:
       fp.write(KoshDB.FILE_HEADER)
       for key in self._masterKeys:
-        fp.write(str(key) + '\n')
+        fp.write(str(key).strip() + '\n')
       for entry in self:
-        fp.write(str(entry) + '\n')
+        fp.write(str(self[entry]).strip() + '\n')
       fp.flush()
       if os.path.exists(filename):
         os.rename(filename, filename+'~')
@@ -218,7 +221,7 @@ class KoshDB(dict):
           except ChecksumFailure:
             continue
           else:
-            self[entry['name']] = entry
+            self[entry['Name']] = entry
             break
         else:
           # Multi user mode may ignore this

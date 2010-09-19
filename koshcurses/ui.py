@@ -6,16 +6,30 @@ import weakref
 import widgets
 
 class passwordList(urwid.WidgetWrap):
-  def __init__(self, db):
-    self.content = [ urwid.Button(x, self.select) for x in db ]
-    lb = urwid.ListBox(self.content)
-    urwid.WidgetWrap.__init__(self, lb)
+  def __init__(self, db, showCallback):
+    self.db = db
+    self.showCallback = showCallback
+    self.refresh()
+    urwid.WidgetWrap.__init__(self, self.lb)
+
+  def refresh(self):
+    self.content = [ urwid.Button(x, self.select) for x in self.db ]
+    self.lb = urwid.ListBox(self.content)
+    self._set_w(self.lb)
+    if len(self.db):
+      self.showCallback(self.db[self.lb.get_focus()[0].get_label()])
 
   def keypress(self, size, key):
-    if key == 'j' or key == 'k':
-      self.content.append(urwid.Text(key))
-      return
-    return super(passwordList, self).keypress(size, key)
+    ret = super(passwordList, self).keypress(size, key)
+    if ret is not None:
+      # FIXME: generalise these, handle tab better:
+      if key in ['j']: return self.keypress(size, 'down')
+      if key in ['k']: return self.keypress(size, 'up')
+      if key in ['h']: return self.keypress(size, 'left')
+      if key in ['l', 'tab']: return self.keypress(size, 'right')
+    # FIXME: Only do this if selection changed, now when editing, etc
+    self.showCallback(self.db[self.lb.get_focus()[0].get_label()])
+    return ret
 
   def select(self, button):
     pass
@@ -24,38 +38,59 @@ class passwordForm(urwid.WidgetWrap):
   def __init__(self):
     urwid.WidgetWrap.__init__(self, urwid.SolidFill())
     self.lb = None
-    self.editing = False
 
   def show(self, entry):
     self.entry = entry
-    self.content = [urwid.Text('Name:'), urwid.Text(self.entry.name)]
+    self.content = [urwid.Text('Name:'), urwid.Text(self.entry.name)] + \
+      [ urwid.Button(x) for x in entry if x != 'Name' ]
     self._update()
 
-  def edit(self, entry):
+  def edit(self, entry, ok, cancel):
     self.entry = entry
-    self.content = [widgets.koshEdit('Name: ', self.entry.name)] + \
-      [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ] + \
-      [ urwid.GridFlow(
-          [urwid.Button('Save'), urwid.Button('Cancel') ],
+    self.cancel = cancel
+    self.okCallback=ok
+    self.fields = [widgets.koshEdit('Name: ', self.entry.name)] + \
+      [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry if x != 'Name' ]
+    self.content = self.fields + [ urwid.GridFlow(
+          [urwid.Button('Save', self.commit),
+            urwid.Button('Cancel', self.discard) ],
           10, 3, 1, 'center')
       ]
-    self.editing = True
     self._update()
 
+  def validate(self):
+    return self.fields[0].get_edit_text() != ''
+
+  def commit(self, *args):
+    if not self.validate():
+      # FIXME: Notify
+      return
+    for field in self.fields:
+      name = field.caption[:-2]
+      txt = field.get_edit_text()
+      if txt == '':
+        del self.entry[name]
+      else:
+        self.entry[name] = txt
+    self.okCallback(self.entry)
+
+  def discard(self, *args):
+    self.entry = None
+    self._set_w(urwid.SolidFill())
+    self.fields = None
+    self.content = None
+    self.lb = None
+    self.cancel()
+
   def keypress(self, size, key):
-    if self.lb is None:
-      return super(passwordForm, self).keypress(size, key)
-    if key == 'tab': # FIXME: I'm certain there is a better way to do this
-      focus_widget, position = self.lb.get_focus()
-      self.lb.set_focus(position+1)
-      return
-    if key == 'shift tab':
-      focus_widget, position = self.lb.get_focus()
-      position = position-1
-      if position >= 0:
-        self.lb.set_focus(position)
-      return
-    return super(passwordForm, self).keypress(size, key)
+    ret = super(passwordForm, self).keypress(size, key)
+    if ret is not None:
+      # FIXME: generalise these. Tab not handled ideally:
+      if key in ['j', 'tab']: return self.keypress(size, 'down')
+      if key in ['k', 'shift tab']: return self.keypress(size, 'up')
+      if key == 'h': return self.keypress(size, 'left')
+      if key == 'l': return self.keypress(size, 'right')
+    return ret
 
   def _update(self):
     self.lb = urwid.ListBox(self.content)
@@ -63,13 +98,13 @@ class passwordForm(urwid.WidgetWrap):
 
 class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
-      'n': 'new'
+      'n': 'new' # FIXME: Not when button selected, etc
       }
 
   def __init__(self, db):
     self.db = weakref.proxy(db)
-    self.pwList = passwordList(self.db)
     self.pwEntry = passwordForm()
+    self.pwList = passwordList(self.db, self.pwEntry.show)
     self.container = widgets.LineColumns( [
       ('weight', 0.75, self.pwList),
       self.pwEntry
@@ -84,7 +119,18 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     entry['URL'] = ''
     entry['Notes'] = '' # FIXME: Multi-line
     self.container.set_focus(self.pwEntry)
-    self.pwEntry.edit(entry)
+    self.pwEntry.edit(entry, self.commitNew, self.cancel)
+
+  def commitNew(self, entry):
+    self.db[entry['Name']] = entry
+    self.pwEntry.show(entry)
+    self.pwList.refresh()
+    self.db.write()
+
+  def cancel(self):
+    # Necessary to get focus back
+    self.container.set_focus(0)
+    
 
   def showModal(self, parent=None):
     def exit_on_input(input):
