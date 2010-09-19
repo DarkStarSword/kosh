@@ -25,7 +25,7 @@ class inputDialog(urwid.WidgetWrap):
       parent = urwid.SolidFill()
     overlay = urwid.Overlay(self, parent, 'center', self.width, 'middle', self.height)
     def exit_on_input(input):
-      if input.lower() in ('enter'):
+      if input in ['enter']:
         raise urwid.ExitMainLoop()
     urwid.MainLoop(overlay, unhandled_input=exit_on_input).run()
     return self.edit.get_edit_text()

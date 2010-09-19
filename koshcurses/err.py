@@ -8,7 +8,7 @@ def showErr(msg):
         urwid.SimpleListWalker([ urwid.Text(msg) ]))
 
     def exit_on_q(input):
-      if input.lower() in ('enter', 'q', 'esc'):
+      if input in ['enter', 'q', 'Q', 'esc']:
         raise urwid.ExitMainLoop()
     urwid.MainLoop(lb, unhandled_input = exit_on_q).run()
   finally:

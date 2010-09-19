@@ -88,6 +88,6 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
 
   def showModal(self, parent=None):
     def exit_on_input(input):
-      if input.lower() in ('escape'):
+      if input in ['esc']:
         raise urwid.ExitMainLoop()
     urwid.MainLoop(self, unhandled_input=exit_on_input).run()
