@@ -4,6 +4,7 @@
 import urwid
 import weakref
 import utf8
+import widgets
 
 class passwordList(urwid.WidgetWrap):
   def __init__(self, db):
@@ -61,7 +62,11 @@ class passwordForm(urwid.WidgetWrap):
     self.lb = urwid.ListBox(self.content)
     self._set_w(self.lb)
 
-class koshUI(urwid.WidgetWrap):
+class koshUI(widgets.keymapwid, urwid.WidgetWrap):
+  keymap = {
+      'n': 'new'
+      }
+
   def __init__(self, db):
     self.db = weakref.proxy(db)
     self.pwList = passwordList(self.db)
@@ -76,18 +81,15 @@ class koshUI(urwid.WidgetWrap):
         urwid.Divider(utf8.symbol('BOX DRAWINGS LIGHT HORIZONTAL')))
     urwid.WidgetWrap.__init__(self, self.frame)
 
-  def keypress(self, size, key):
-    if key == 'n':
-      import koshdb # FIXME: decouple this
-      entry = koshdb.koshdb.passEntry(self.db._masterKeys[0])
-      entry['Username'] = ''
-      entry['Password'] = ''
-      entry['URL'] = ''
-      entry['Notes'] = '' # FIXME: Multi-line
-      self.container.set_focus(self.pwEntry)
-      self.pwEntry.edit(entry)
-      return
-    return super(koshUI, self).keypress(size, key)
+  def new(self, size, key):
+    import koshdb # FIXME: decouple this
+    entry = koshdb.koshdb.passEntry(self.db._masterKeys[0])
+    entry['Username'] = ''
+    entry['Password'] = ''
+    entry['URL'] = ''
+    entry['Notes'] = '' # FIXME: Multi-line
+    self.container.set_focus(self.pwEntry)
+    self.pwEntry.edit(entry)
 
   def showModal(self, parent=None):
     def exit_on_input(input):

@@ -25,3 +25,12 @@ class passwordEdit(koshEdit):
     attributes -- run length encoded attributes for text
     """
     return self._caption + '*'*len(self._edit_text), self._attrib
+
+class keymapwid(object):
+  keymap = {}
+  def keypress(self, size, key):
+    if key in self.keymap:
+      getattr(self, self.keymap[key])(size, key)
+    else:
+      # Pass keypress to sibling class:
+      super(keymapwid, self).keypress(size, key)
