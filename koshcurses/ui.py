@@ -3,7 +3,6 @@
 
 import urwid
 import weakref
-import utf8
 import widgets
 
 class passwordList(urwid.WidgetWrap):
@@ -71,16 +70,12 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     self.db = weakref.proxy(db)
     self.pwList = passwordList(self.db)
     self.pwEntry = passwordForm()
-    self.container = urwid.Columns( [
+    self.container = widgets.LineColumns( [
       ('weight', 0.75, self.pwList),
-      ('fixed', 1, urwid.SolidFill(utf8.symbol('BOX DRAWINGS LIGHT VERTICAL'))),
       self.pwEntry
-      ], dividechars=1 )
-    self.frame = urwid.Frame(self.container,
-        urwid.Divider(utf8.symbol('BOX DRAWINGS LIGHT HORIZONTAL')),
-        urwid.Divider(utf8.symbol('BOX DRAWINGS LIGHT HORIZONTAL')))
-    urwid.WidgetWrap.__init__(self, self.frame)
-
+      ] )
+    urwid.WidgetWrap.__init__(self, self.container)
+  
   def new(self, size, key):
     import koshdb # FIXME: decouple this
     entry = koshdb.koshdb.passEntry(self.db._masterKeys[0])

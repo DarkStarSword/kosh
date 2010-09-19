@@ -13,8 +13,17 @@ import weakref
 #        encodable into ASCII)
 utf_8_sequences = {
   'BOX DRAWINGS LIGHT HORIZONTAL'                         : '\xe2\x94\x80', # works
-  'BOX DRAWINGS HEAVY HORIZONTAL'                         : '\xe2\x94\x81',
   'BOX DRAWINGS LIGHT VERTICAL'                           : '\xe2\x94\x82', # works
+  'BOX DRAWINGS LIGHT DOWN AND RIGHT'                     : '\xe2\x94\x8c', #
+  'BOX DRAWINGS LIGHT DOWN AND LEFT'                      : '\xe2\x94\x90', #
+  'BOX DRAWINGS LIGHT UP AND RIGHT'                       : '\xe2\x94\x94', #
+  'BOX DRAWINGS LIGHT UP AND LEFT'                        : '\xe2\x94\x98', #
+  'BOX DRAWINGS LIGHT VERTICAL AND RIGHT'                 : '\xe2\x94\x9c', #
+  'BOX DRAWINGS LIGHT VERTICAL AND LEFT'                  : '\xe2\x94\xa4', #
+  'BOX DRAWINGS LIGHT DOWN AND HORIZONTAL'                : '\xe2\x94\xac', #
+  'BOX DRAWINGS LIGHT UP AND HORIZONTAL'                  : '\xe2\x94\xb4', #
+  'BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL'            : '\xe2\x94\xbc', #
+  'BOX DRAWINGS HEAVY HORIZONTAL'                         : '\xe2\x94\x81',
   'BOX DRAWINGS HEAVY VERTICAL'                           : '\xe2\x94\x83',
   'BOX DRAWINGS LIGHT TRIPLE DASH HORIZONTAL'             : '\xe2\x94\x84',
   'BOX DRAWINGS HEAVY TRIPLE DASH HORIZONTAL'             : '\xe2\x94\x85',
@@ -24,23 +33,18 @@ utf_8_sequences = {
   'BOX DRAWINGS HEAVY QUADRUPLE DASH HORIZONTAL'          : '\xe2\x94\x89',
   'BOX DRAWINGS LIGHT QUADRUPLE DASH VERTICAL'            : '\xe2\x94\x8a',
   'BOX DRAWINGS HEAVY QUADRUPLE DASH VERTICAL'            : '\xe2\x94\x8b',
-  'BOX DRAWINGS LIGHT DOWN AND RIGHT'                     : '\xe2\x94\x8c',
   'BOX DRAWINGS DOWN LIGHT AND RIGHT HEAVY'               : '\xe2\x94\x8d',
   'BOX DRAWINGS DOWN HEAVY AND RIGHT LIGHT'               : '\xe2\x94\x8e',
   'BOX DRAWINGS HEAVY DOWN AND RIGHT'                     : '\xe2\x94\x8f',
-  'BOX DRAWINGS LIGHT DOWN AND LEFT'                      : '\xe2\x94\x90',
   'BOX DRAWINGS DOWN LIGHT AND LEFT HEAVY'                : '\xe2\x94\x91',
   'BOX DRAWINGS DOWN HEAVY AND LEFT LIGHT'                : '\xe2\x94\x92',
   'BOX DRAWINGS HEAVY DOWN AND LEFT'                      : '\xe2\x94\x93',
-  'BOX DRAWINGS LIGHT UP AND RIGHT'                       : '\xe2\x94\x94',
   'BOX DRAWINGS UP LIGHT AND RIGHT HEAVY'                 : '\xe2\x94\x95',
   'BOX DRAWINGS UP HEAVY AND RIGHT LIGHT'                 : '\xe2\x94\x96',
   'BOX DRAWINGS HEAVY UP AND RIGHT'                       : '\xe2\x94\x97',
-  'BOX DRAWINGS LIGHT UP AND LEFT'                        : '\xe2\x94\x98',
   'BOX DRAWINGS UP LIGHT AND LEFT HEAVY'                  : '\xe2\x94\x99',
   'BOX DRAWINGS UP HEAVY AND LEFT LIGHT'                  : '\xe2\x94\x9a',
   'BOX DRAWINGS HEAVY UP AND LEFT'                        : '\xe2\x94\x9b',
-  'BOX DRAWINGS LIGHT VERTICAL AND RIGHT'                 : '\xe2\x94\x9c',
   'BOX DRAWINGS VERTICAL LIGHT AND RIGHT HEAVY'           : '\xe2\x94\x9d',
   'BOX DRAWINGS UP HEAVY AND RIGHT DOWN LIGHT'            : '\xe2\x94\x9e',
   'BOX DRAWINGS DOWN HEAVY AND RIGHT UP LIGHT'            : '\xe2\x94\x9f',
@@ -48,7 +52,6 @@ utf_8_sequences = {
   'BOX DRAWINGS DOWN LIGHT AND RIGHT UP HEAVY'            : '\xe2\x94\xa1',
   'BOX DRAWINGS UP LIGHT AND RIGHT DOWN HEAVY'            : '\xe2\x94\xa2',
   'BOX DRAWINGS HEAVY VERTICAL AND RIGHT'                 : '\xe2\x94\xa3',
-  'BOX DRAWINGS LIGHT VERTICAL AND LEFT'                  : '\xe2\x94\xa4',
   'BOX DRAWINGS VERTICAL LIGHT AND LEFT HEAVY'            : '\xe2\x94\xa5',
   'BOX DRAWINGS UP HEAVY AND LEFT DOWN LIGHT'             : '\xe2\x94\xa6',
   'BOX DRAWINGS DOWN HEAVY AND LEFT UP LIGHT'             : '\xe2\x94\xa7',
@@ -56,7 +59,6 @@ utf_8_sequences = {
   'BOX DRAWINGS DOWN LIGHT AND LEFT UP HEAVY'             : '\xe2\x94\xa9',
   'BOX DRAWINGS UP LIGHT AND LEFT DOWN HEAVY'             : '\xe2\x94\xaa',
   'BOX DRAWINGS HEAVY VERTICAL AND LEFT'                  : '\xe2\x94\xab',
-  'BOX DRAWINGS LIGHT DOWN AND HORIZONTAL'                : '\xe2\x94\xac',
   'BOX DRAWINGS LEFT HEAVY AND RIGHT DOWN LIGHT'          : '\xe2\x94\xad',
   'BOX DRAWINGS RIGHT HEAVY AND LEFT DOWN LIGHT'          : '\xe2\x94\xae',
   'BOX DRAWINGS DOWN LIGHT AND HORIZONTAL HEAVY'          : '\xe2\x94\xaf',
@@ -64,7 +66,6 @@ utf_8_sequences = {
   'BOX DRAWINGS RIGHT LIGHT AND LEFT DOWN HEAVY'          : '\xe2\x94\xb1',
   'BOX DRAWINGS LEFT LIGHT AND RIGHT DOWN HEAVY'          : '\xe2\x94\xb2',
   'BOX DRAWINGS HEAVY DOWN AND HORIZONTAL'                : '\xe2\x94\xb3',
-  'BOX DRAWINGS LIGHT UP AND HORIZONTAL'                  : '\xe2\x94\xb4',
   'BOX DRAWINGS LEFT HEAVY AND RIGHT UP LIGHT'            : '\xe2\x94\xb5',
   'BOX DRAWINGS RIGHT HEAVY AND LEFT UP LIGHT'            : '\xe2\x94\xb6',
   'BOX DRAWINGS UP LIGHT AND HORIZONTAL HEAVY'            : '\xe2\x94\xb7',
@@ -72,7 +73,6 @@ utf_8_sequences = {
   'BOX DRAWINGS RIGHT LIGHT AND LEFT UP HEAVY'            : '\xe2\x94\xb9',
   'BOX DRAWINGS LEFT LIGHT AND RIGHT UP HEAVY'            : '\xe2\x94\xba',
   'BOX DRAWINGS HEAVY UP AND HORIZONTAL'                  : '\xe2\x94\xbb',
-  'BOX DRAWINGS LIGHT VERTICAL AND HORIZONTAL'            : '\xe2\x94\xbc',
   'BOX DRAWINGS LEFT HEAVY AND RIGHT VERTICAL LIGHT'      : '\xe2\x94\xbd',
   'BOX DRAWINGS RIGHT HEAVY AND LEFT VERTICAL LIGHT'      : '\xe2\x94\xbe',
   'BOX DRAWINGS VERTICAL LIGHT AND HORIZONTAL HEAVY'      : '\xe2\x94\xbf',

@@ -2,6 +2,7 @@
 # vi:sw=2:ts=2:expandtab
 
 import urwid
+import utf8
 
 class koshEdit(urwid.Edit):
   """ Subclass of urwid.Edit to handle ^u to kill line """
@@ -34,3 +35,30 @@ class keymapwid(object):
     else:
       # Pass keypress to sibling class:
       super(keymapwid, self).keypress(size, key)
+
+class LineColumns(urwid.WidgetWrap):
+  vline = urwid.SolidFill(utf8.symbol('BOX DRAWINGS LIGHT VERTICAL'))
+  hline = ('flow', urwid.Divider(utf8.symbol('BOX DRAWINGS LIGHT HORIZONTAL')))
+  tlcorner = ('flow', urwid.Text(utf8.symbol('BOX DRAWINGS LIGHT DOWN AND RIGHT')))
+  trcorner = ('flow', urwid.Text(utf8.symbol('BOX DRAWINGS LIGHT DOWN AND LEFT')))
+  blcorner = ('flow', urwid.Text(utf8.symbol('BOX DRAWINGS LIGHT UP AND RIGHT')))
+  brcorner = ('flow', urwid.Text(utf8.symbol('BOX DRAWINGS LIGHT UP AND LEFT')))
+  tdivisor = ('flow', urwid.Text(utf8.symbol('BOX DRAWINGS LIGHT DOWN AND HORIZONTAL')))
+  bdivisor = ('flow', urwid.Text(utf8.symbol('BOX DRAWINGS LIGHT UP AND HORIZONTAL')))
+  left    = ('fixed', 1, urwid.Pile( [ tlcorner, vline, blcorner ], 1))
+  right   = ('fixed', 1, urwid.Pile( [ trcorner, vline, brcorner ], 1))
+  divider = ('fixed', 1, urwid.Pile( [ tdivisor, vline, bdivisor ], 1))
+
+  def __init__(self, widget_list, dividechars=0):
+    self.widget_list = widget_list
+    self.columns = urwid.Columns( [self.left] +
+        reduce(lambda a,b: a+b, [[urwid.Pile( [self.hline, col, self.hline], 1), self.divider] for col in widget_list])[:-1] +
+        [self.right] )
+    urwid.WidgetWrap.__init__(self, self.columns)
+
+  def set_focus(self, item):
+    if type(item) == type(0):
+      position = item
+    else:
+      position = self.widget_list.index(item)
+    return self.columns.set_focus(position*2 + 1)
