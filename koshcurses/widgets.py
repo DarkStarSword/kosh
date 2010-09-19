@@ -22,11 +22,16 @@ class koshEdit(urwid.Edit):
     else:
       return urwid.Edit.keypress(self, size, key)
 
-class passwordEdit(koshEdit):
+class passwordEdit(keymapwid, koshEdit):
+  keymap = {
+      'f8': 'toggleReveal',
+      }
   def __init__(self, caption="", edit_text="", multiline=False,
           align=urwid.LEFT, wrap=urwid.CLIP, allow_tab=False,
-          edit_pos=None, layout=None):
+          edit_pos=None, layout=None, revealable=False, reveal=False):
     """ Force disabling wrapping as that could give away hints as to whitespace in a passphrase """
+    self.revealable = revealable
+    self.reveal = reveal
     koshEdit.__init__(self,caption,edit_text,multiline,align,urwid.CLIP,allow_tab,edit_pos,layout)
 
   def get_text(self):
@@ -35,8 +40,14 @@ class passwordEdit(koshEdit):
     text -- complete text of caption and asterisks in place of edit_text
     attributes -- run length encoded attributes for text
     """
+    if self.reveal:
+      return super(passwordEdit, self).get_text()
     return self._caption + '*'*len(self._edit_text), self._attrib
 
+  def toggleReveal(self, size, key):
+    if not self.revealable: return key
+    self.reveal = not self.reveal
+    self._invalidate()
 
 class LineColumns(urwid.WidgetWrap):
   vline = urwid.SolidFill(utf8.symbol('BOX DRAWINGS LIGHT VERTICAL'))

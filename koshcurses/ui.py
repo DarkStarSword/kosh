@@ -33,8 +33,8 @@ class passwordForm(urwid.WidgetWrap):
 
   def edit(self, entry):
     self.entry = entry
-    self.content = [urwid.Edit('Name: ', self.entry.name)] + \
-      [ urwid.Edit(x+": ", entry[x]) for x in entry ] + \
+    self.content = [widgets.koshEdit('Name: ', self.entry.name)] + \
+      [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ] + \
       [ urwid.GridFlow(
           [urwid.Button('Save'), urwid.Button('Cancel') ],
           10, 3, 1, 'center')
