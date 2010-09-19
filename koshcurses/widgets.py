@@ -63,9 +63,13 @@ class LineColumns(urwid.WidgetWrap):
   divider = ('fixed', 1, urwid.Pile( [ tdivisor, vline, bdivisor ], 1))
 
   def __init__(self, widget_list, dividechars=0):
+    def extractsize(widget):
+      if type(widget) == type(()):
+        return widget[:2] + tuple([urwid.Pile( [self.hline, widget[2], self.hline], 1)])
+      return urwid.Pile( [self.hline, widget, self.hline], 1)
     self.widget_list = widget_list
     self.columns = urwid.Columns( [self.left] +
-        reduce(lambda a,b: a+b, [[urwid.Pile( [self.hline, col, self.hline], 1), self.divider] for col in widget_list])[:-1] +
+        reduce(lambda a,b: a+b, [[extractsize(col), self.divider] for col in widget_list])[:-1] +
         [self.right] )
     urwid.WidgetWrap.__init__(self, self.columns)
 
