@@ -6,18 +6,19 @@ import weakref
 import widgets
 
 class passwordList(urwid.WidgetWrap):
-  def __init__(self, db, showCallback):
+  def __init__(self, db, pwList):
     self.db = db
-    self.showCallback = showCallback
+    self.pwList = pwList
     self.refresh()
     urwid.WidgetWrap.__init__(self, self.lb)
 
   def refresh(self):
     self.content = [ urwid.Button(x, self.select) for x in self.db ]
     self.lb = urwid.ListBox(self.content)
+    self.selection = 0
     self._set_w(self.lb)
     if len(self.db):
-      self.showCallback(self.db[self.lb.get_focus()[0].get_label()])
+      self.pwList.show(self.db[self.lb.get_focus()[0].get_label()])
 
   def keypress(self, size, key):
     ret = super(passwordList, self).keypress(size, key)
@@ -27,12 +28,16 @@ class passwordList(urwid.WidgetWrap):
       if key in ['k']: return self.keypress(size, 'up')
       if key in ['h']: return self.keypress(size, 'left')
       if key in ['l', 'tab']: return self.keypress(size, 'right')
-    # FIXME: Only do this if selection changed, now when editing, etc
-    self.showCallback(self.db[self.lb.get_focus()[0].get_label()])
+      # FIXME: edit, delete, yank
+    selection = self.lb.get_focus()
+    if selection[1] != self.selection:
+      self.pwList.show(self.db[selection[0].get_label()])
+      self.selection = selection[1]
     return ret
 
   def select(self, button):
-    pass
+    self.pwList.reveal(self.db[button.get_label()])
+    # FIXME: focus
 
 class passwordForm(urwid.WidgetWrap):
   def __init__(self):
@@ -41,8 +46,14 @@ class passwordForm(urwid.WidgetWrap):
 
   def show(self, entry):
     self.entry = entry
-    self.content = [urwid.Text('Name:'), urwid.Text(self.entry.name)] + \
+    self.content = [urwid.Text('Name: ' + self.entry['Name'])] + \
       [ urwid.Button(x) for x in entry if x != 'Name' ]
+    self._update()
+
+  def reveal(self, entry):
+    self.entry = entry
+    self.content = [urwid.Text('Name: ' + self.entry['Name'])] + \
+      [ urwid.Text(x+": " + entry[x]) for x in entry if x != 'Name' ]
     self._update()
 
   def edit(self, entry, ok, cancel):
@@ -104,7 +115,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   def __init__(self, db):
     self.db = weakref.proxy(db)
     self.pwEntry = passwordForm()
-    self.pwList = passwordList(self.db, self.pwEntry.show)
+    self.pwList = passwordList(self.db, self.pwEntry)
     self.container = widgets.LineColumns( [
       ('weight', 0.75, self.pwList),
       self.pwEntry
