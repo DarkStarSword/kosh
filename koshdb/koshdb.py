@@ -221,7 +221,7 @@ class KoshDB(dict):
           except ChecksumFailure:
             continue
           else:
-            self[entry['Name']] = entry
+            self[entry.name] = entry
             break
         else:
           # Multi user mode may ignore this

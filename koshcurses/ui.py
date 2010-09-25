@@ -46,23 +46,23 @@ class passwordForm(urwid.WidgetWrap):
 
   def show(self, entry):
     self.entry = entry
-    self.content = [urwid.Text('Name: ' + self.entry['Name'])] + \
-      [ urwid.Button(x) for x in entry if x != 'Name' ]
+    self.content = [urwid.Text('Name: ' + self.entry.name)] + \
+      [ urwid.Button(x) for x in entry ]
     self._update()
 
   def reveal(self, entry):
     self.entry = entry
-    self.content = [urwid.Text('Name: ' + self.entry['Name'])] + \
-      [ urwid.Text(x+": " + entry[x]) for x in entry if x != 'Name' ]
+    self.content = [urwid.Text('Name: ' + self.entry.name)] + \
+      [ urwid.Text(x+": " + entry[x]) for x in entry ]
     self._update()
 
   def edit(self, entry, ok, cancel):
     self.entry = entry
     self.cancel = cancel
     self.okCallback=ok
-    self.fields = [widgets.koshEdit('Name: ', self.entry.name)] + \
-      [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry if x != 'Name' ]
-    self.content = self.fields + [ urwid.GridFlow(
+    self.fname = widgets.koshEdit('Name: ', self.entry.name)
+    self.fields = [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ]
+    self.content = [self.fname] + self.fields + [ urwid.GridFlow(
           [urwid.Button('Save', self.commit),
             urwid.Button('Cancel', self.discard) ],
           10, 3, 1, 'center')
@@ -70,12 +70,13 @@ class passwordForm(urwid.WidgetWrap):
     self._update()
 
   def validate(self):
-    return self.fields[0].get_edit_text() != ''
+    return self.fname.get_edit_text() != ''
 
   def commit(self, *args):
     if not self.validate():
       # FIXME: Notify
       return
+    self.entry.name = self.fname.get_edit_text()
     for field in self.fields:
       name = field.caption[:-2]
       txt = field.get_edit_text()
@@ -133,7 +134,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     self.pwEntry.edit(entry, self.commitNew, self.cancel)
 
   def commitNew(self, entry):
-    self.db[entry['Name']] = entry
+    self.db[entry.name] = entry
     self.pwEntry.show(entry)
     self.pwList.refresh()
     self.db.write()
