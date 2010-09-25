@@ -4,6 +4,7 @@
 import urwid
 import weakref
 import widgets
+import time
 
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -64,13 +65,15 @@ class passwordForm(urwid.WidgetWrap):
   def show(self, entry):
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
-      [ urwid.Button(x) for x in entry ]
+      [ urwid.Button(x) for x in entry ] + \
+      [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
     self._update()
 
   def reveal(self, entry):
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
-      [ urwid.Text(x+": " + entry[x]) for x in entry ]
+      [ urwid.Text(x+": " + entry[x]) for x in entry ] + \
+      [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
     self._update()
 
   def edit(self, entry, ok, cancel):
