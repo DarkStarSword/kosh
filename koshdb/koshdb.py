@@ -6,6 +6,7 @@ import fcntl
 import Crypto.Hash.SHA
 import Crypto.Hash.SHA256
 import Crypto.Cipher.AES
+import Crypto.Util.strxor
 import base64
 import threading
 import weakref
@@ -14,6 +15,9 @@ import json
 def randBits(size):
   import Crypto.Random
   return Crypto.Random.get_random_bytes(size/8)
+
+def extendstr(data, length):
+  return (data*(length/len(data)+1))[:length]
 
 class ChecksumFailure(Exception): pass
 class KeyExpired(Exception): pass
@@ -75,13 +79,16 @@ class _masterKey(object):
     Take a chunk of data and encrypt it using this key.
     Raises KeyExpired if this key has timed out.
     """
+    import Crypto.Util.strxor
     def pad(data, multiple):
       assert(multiple < 256)
       padding = multiple - ((len(data) + 1) % multiple)
       return data + '\0'*padding + chr(padding+1)
-    a = Crypto.Cipher.AES.new(self._key)
     checksum = Crypto.Hash.SHA.new(data).digest()
-    e = a.encrypt(pad(data + checksum, Crypto.Cipher.AES.block_size))
+    a = Crypto.Cipher.AES.new(self._key)
+    s = randBits(256)
+    data = Crypto.Util.strxor.strxor(data,extendstr(s, len(data)))
+    e = a.encrypt(pad(data + s + checksum, Crypto.Cipher.AES.block_size))
     return base64.encodestring(e).replace('\n','')
 
 
@@ -97,8 +104,10 @@ class _masterKey(object):
     d = base64.decodestring(blob)
     a = Crypto.Cipher.AES.new(self._key)
     deciphered = unpad(a.decrypt(d))
-    decrypted = deciphered[:-Crypto.Hash.SHA.digest_size]
+    decrypted = deciphered[:-Crypto.Hash.SHA.digest_size-32]
+    salt      = deciphered[-Crypto.Hash.SHA.digest_size-32:-Crypto.Hash.SHA.digest_size]
     checksum  = deciphered[-Crypto.Hash.SHA.digest_size:]
+    decrypted = Crypto.Util.strxor.strxor(decrypted,extendstr(salt, len(decrypted)))
     if checksum != Crypto.Hash.SHA.new(decrypted).digest():
       raise ChecksumFailure()
     return decrypted
@@ -107,7 +116,7 @@ class _masterKey(object):
   def _encMasterKey(key, passphrase):
     h = Crypto.Hash.SHA256.new(passphrase).digest()
     s = randBits(256)
-    k = ''.join([chr(ord(a) ^ ord(b)) for (a,b) in zip(h,s)])
+    k = Crypto.Util.strxor.strxor(h,s)
     a = Crypto.Cipher.AES.new(k)
     checksum = Crypto.Hash.SHA256.new(key).digest()
     e = a.encrypt(key + checksum)
@@ -119,7 +128,7 @@ class _masterKey(object):
     h = Crypto.Hash.SHA256.new(passphrase).digest()
     e = d[:-256/8]
     s = d[-256/8:]
-    k = ''.join([chr(ord(a) ^ ord(b)) for (a,b) in zip(h,s)])
+    k = Crypto.Util.strxor.strxor(h,s)
     a = Crypto.Cipher.AES.new(k)
     deciphered = a.decrypt(e)
     key      = deciphered[:-Crypto.Hash.SHA256.digest_size]
