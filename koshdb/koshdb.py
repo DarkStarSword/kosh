@@ -20,6 +20,8 @@ class KeyExpired(Exception): pass
 class Bug(Exception): pass
 class ReadOnlyPassEntry(Exception): pass
 
+passDefaultFieldOrder = ['Username','Password']
+
 class _masterKey(object):
   # TODO: Add timeout
   # TODO: Protect self._key (mprotect, accessor methods)
@@ -182,6 +184,29 @@ class passEntry(dict):
 
   def __ne__(self, other):
     return not passEntry.__eq__(self, other)
+
+  def __iter__(self):
+    """
+    Return an iterator that will iterate over the fields in a sensible order.
+    If the FieldOrder metadata is present in this entry that will be used to
+    order the fields, otherwise a default ordering will be applied. Any fields
+    that are not tagged to have a particular order will be returned after all
+    ordered fields.
+    """
+    order = passDefaultFieldOrder
+    if 'FieldOrder' in self.meta:
+      order = self.meta['FieldOrder']
+
+    def sortedGen(self, order):
+      fields = self.keys()
+      for field in order:
+        if field in fields:
+          yield field
+          fields.remove(field)
+      for field in fields:
+        yield field
+
+    return sortedGen(self, order)
 
 class KoshDB(dict):
   FILE_HEADER = 'K05Hv0 UNSTABLE\n'
