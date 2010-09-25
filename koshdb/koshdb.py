@@ -17,6 +17,8 @@ def randBits(size):
 
 class ChecksumFailure(Exception): pass
 class KeyExpired(Exception): pass
+class Bug(Exception): pass
+class ReadOnlyPassEntry(Exception): pass
 
 class _masterKey(object):
   # TODO: Add timeout
@@ -129,13 +131,14 @@ class passEntry(dict):
 
   def __init__(self, masterKey, blob=None, name=None):
     self._masterKey = weakref.proxy(masterKey)
+    self._timestamp = None
+    self.older = None
+    self.newer = None
+    self.meta = []
     if blob is not None:
       assert(blob.startswith(self.BLOB_PREFIX))
       self._blob = blob[len(self.BLOB_PREFIX):]
-      contents = masterKey.decrypt(self._blob)
-      decode = json.loads(contents)
-      self.name = decode[0]
-      self.update(decode[1])
+      self._dec()
     elif name is not None:
       self.name = name
     else:
@@ -145,6 +148,8 @@ class passEntry(dict):
     return self.BLOB_PREFIX + self._blob
 
   def __setitem__(self, name, val):
+    if self._timestamp is not None:
+      raise ReadOnlyPassEntry()
     dict.__setitem__(self, name, val)
     self._enc()
 
@@ -153,9 +158,30 @@ class passEntry(dict):
     self._enc()
 
   def _enc(self):
-    serialise = json.dumps((self.name, self))
+    serialise = json.dumps((self.name, self._timestamp, self, self.meta))
     self._blob = self._masterKey.encrypt(serialise)
-   
+
+  def _dec(self):
+    contents = self._masterKey.decrypt(self._blob)
+    (self.name, self._timestamp, data, self.meta) = json.loads(contents)
+    self.update(data)
+
+  def timestamp(self):
+    import time
+    if self._timestamp is None:
+      self._timestamp = int(time.time())
+      self._enc()
+    return self._timestamp
+
+  def __cmp__(self, other):
+    return cmp(self._timestamp, other._timestamp)
+
+  def __eq__(self, other):
+    # Do not consider timestamp when checking for equality
+    return self.name == other.name and dict.__eq__(self, other) and self.meta == other.meta
+
+  def __ne__(self, other):
+    return not passEntry.__eq__(self, other)
 
 class KoshDB(dict):
   FILE_HEADER = 'K05Hv0 UNSTABLE\n'
@@ -181,6 +207,8 @@ class KoshDB(dict):
         break
       msg = failmsg
     self._masterKeys = [_masterKey(passphrase)]
+    self._oldEntries = []
+    self._lines = [_masterKey(passphrase)]
     self._write(filename)
 
   def write(self):
@@ -188,32 +216,58 @@ class KoshDB(dict):
 
   def _write(self, filename):
     # FIXME: Locking to avoid separate processes clobbering each other
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode='wb', delete=False,
+    from tempfile import NamedTemporaryFile
+    from copy import copy
+    bug = False
+
+    entries = copy(self._masterKeys) + self.values() + copy(self._oldEntries)
+    with NamedTemporaryFile(mode='wb', delete=False,
         prefix=os.path.basename(filename),
         dir=os.path.dirname(filename)) as fp:
+
       fp.write(KoshDB.FILE_HEADER)
-      for key in self._masterKeys:
-        fp.write(str(key).strip() + '\n')
-      for entry in self:
-        fp.write(str(self[entry]).strip() + '\n')
+
+      for line in self._lines:
+        if type(line) == type(''):
+          fp.write(line)
+        else:
+          fp.write(str(line).strip() + '\n')
+          try:
+            entries.remove(line)
+          except:
+            bug = True
+            fp.write("# WARNING: Above entry not found in masterkeys or password entries\n")
+
+      if entries != []:
+        bug = True
+        fp.write("# WARNING: Below entries not tracked\n")
+        for entry in entries:
+          fp.write(str(entry).strip() + '\n')
+        fp.write("# WARNING: Above entries not tracked\n")
+
       fp.flush()
       if os.path.exists(filename):
         os.rename(filename, filename+'~')
       os.rename(fp.name, filename)
 
+      if bug:
+        raise Bug("Refer to %s for details" % filename)
+
   def _open(self, filename, prompt):
     self.fp = open(filename, 'rb')
     self._readExpect(KoshDB.FILE_HEADER)
     self._masterKeys = []
+    self._lines = []
+    self._oldEntries = []
     passphrase = prompt('Enter passphrase:')
     passphrases = set()
     passphrases.add(passphrase)
-    for line in self.fp:
+    for (idx, line) in enumerate(self.fp):
       if line.startswith(_masterKey.BLOB_PREFIX):
         (key, passphrase) = self._unlockMasterKey(len(self._masterKeys), line, passphrases, prompt)
         self._masterKeys.append(key)
         passphrases.add(passphrase)
+        self._lines.append(key)
       elif line.startswith(passEntry.BLOB_PREFIX):
         for key in self._masterKeys:
           try:
@@ -226,6 +280,30 @@ class KoshDB(dict):
         else:
           # Multi user mode may ignore this
           raise ChecksumFailure()
+      else:
+        # Unrecognised entry - could be a comment, entry encoded by a different key, etc. whatever it is, don't lose it:
+        self._lines.append(line)
+
+  def __setitem__(self, name, val):
+    assert(name == val.name)
+    val.timestamp()
+    if name in self:
+      if self[name] == val:
+        return
+      (new, old) = self.resolveConflict(self[name], val)
+      # FIXME: Bogus timestamp in future
+      dict.__setitem__(self, name, new)
+      self._oldEntries.append(old)
+    else:
+      dict.__setitem__(self, name, val)
+    self._lines.append(val)
+
+  @staticmethod
+  def resolveConflict(entry1, entry2):
+    (new,old) = [(entry1,entry2),(entry2,entry1)][entry2 >= entry1]
+    new.older = old
+    old.newer = new
+    return (new, old)
 
   def _unlockMasterKey(self, idx, blob, passphrases, prompt):
     for passphrase in passphrases:

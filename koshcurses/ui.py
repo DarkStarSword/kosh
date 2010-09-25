@@ -5,7 +5,12 @@ import urwid
 import weakref
 import widgets
 
-class passwordList(urwid.WidgetWrap):
+class passwordList(widgets.keymapwid, urwid.WidgetWrap):
+  keymap = {
+      'f5': 'showOlder',
+      'f6': 'showNewer'
+      }
+
   def __init__(self, db, pwList):
     self.db = db
     self.pwList = pwList
@@ -18,7 +23,8 @@ class passwordList(urwid.WidgetWrap):
     self.selection = 0
     self._set_w(self.lb)
     if len(self.db):
-      self.pwList.show(self.db[self.lb.get_focus()[0].get_label()])
+      self.showing = self.db[self.lb.get_focus()[0].get_label()]
+      self.pwList.show(self.showing)
 
   def keypress(self, size, key):
     ret = super(passwordList, self).keypress(size, key)
@@ -31,13 +37,24 @@ class passwordList(urwid.WidgetWrap):
       # FIXME: edit, delete, yank
     selection = self.lb.get_focus()
     if selection[1] != self.selection:
-      self.pwList.show(self.db[selection[0].get_label()])
+      self.showing = self.db[selection[0].get_label()]
+      self.pwList.show(self.showing)
       self.selection = selection[1]
     return ret
 
   def select(self, button):
-    self.pwList.reveal(self.db[button.get_label()])
+    self.pwList.reveal(self.showing)
     # FIXME: focus
+
+  def showOlder(self, size, key):
+    if self.showing.older is not None:
+      self.showing = self.showing.older
+      self.pwList.show(self.showing)
+
+  def showNewer(self, size, key):
+    if self.showing.newer is not None:
+      self.showing = self.showing.newer
+      self.pwList.show(self.showing)
 
 class passwordForm(urwid.WidgetWrap):
   def __init__(self):
