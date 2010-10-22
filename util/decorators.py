@@ -17,7 +17,7 @@ def singleton(cls):
     return instances[cls]
   return getinstance
 
-def handleErr(callback):
+def handleErr(callback, ignoreKeyboardInterrupt = True):
   """
   Function decorator to wrap the function call within a try clause.
   If an error is caught the traceback will be passed to the callback function.
@@ -26,7 +26,9 @@ def handleErr(callback):
     def wrap2(*args):
       try: f(*args)
       except:
-        import traceback
+        import traceback, sys
+        if ignoreKeyboardInterrupt and sys.exc_type == KeyboardInterrupt:
+          return
         callback(traceback.format_exc())
     return wrap2
   return wrap1
