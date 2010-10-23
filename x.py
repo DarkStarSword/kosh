@@ -7,6 +7,8 @@ try:
 except ImportError:
   raise
 
+from select import select
+
 def newTimestamp(display, window):
   """
   Appends a property with zero length data and obtains a timestamp from the
@@ -46,7 +48,34 @@ def sendSelection(blob, event):
       time = event.time)
   event.requestor.send_event(resp, 0, 0)
 
+def ownSelections(display, win, selections):
+  timestamp = newTimestamp(display, win)
+  for selection in selections: # FIXME: CLIPBOARD selection
+    win.set_selection_owner(selection, timestamp)
+    if display.get_selection_owner(selection) != win:
+      raise Exception('Failed to own selection %i' % selection)
+  return timestamp
+
+
 def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY]):
+
+  def handleSelectionRequest(e):
+    if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
+        (e.selection not in selections) or # Requesting a different selection
+        (e.owner != win)): # We aren't the owner
+      # FIXME: Maybe support TARGETS, TIMESTAMP, TEXT like pwsafe
+      # FIXME: Required to support TARGETS by ICCCM
+      refuseSelectionRequest(e)
+      return False
+    print "target: %i" % (Xatom.STRING)
+    if (e.target in (Xatom.STRING, XA_TEXT)):
+      # TODO: Get window title and/or command line and host to report
+      sendSelection(blob, e)
+      return True
+    else:
+      refuseSelectionRequest(e)
+      return False
+
   if type(blobs) == type(''): blobs = [blobs]
   try:
     display = Xlib.display.Display()
@@ -55,42 +84,39 @@ def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY]):
   screen = display.screen()
   win = screen.root.create_window(0,0,1,1,0,0)
 
+  XA_TEXT = display.intern_atom('TEXT', True)
+  XA_TARGETS = display.intern_atom('TARGETS', True)
+  XA_TIMESTAMP = display.intern_atom('TIMESTAMP', True)
+
   try:
     for blob in blobs:
-      timestamp = newTimestamp(display, win)
-
-      for selection in selections: # FIXME: CLIPBOARD selection
-        win.set_selection_owner(selection, timestamp)
-        if display.get_selection_owner(selection) != win:
-          raise Exception('Failed to own selection %i' % selection)
+      done = False
+      timestamp = ownSelections(display, win, selections)
 
       while 1:
-        e = display.next_event()
-
-        if e.type == X.SelectionRequest:
-          if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
-              (e.selection not in selections) or # Requesting a different selection
-              (e.owner != win) or # We aren't the owner
-              (e.target != Xatom.STRING)): # Unsupported target
-            # FIXME: Maybe support TARGETS, TIMESTAMP, TEXT like pwsafe
-            # FIXME: Required to support TARGETS by ICCCM
-            refuseSelectionRequest(e)
-            continue 
-
-          sendSelection(blob, e)
-          #break # FIXME: Must await confirmation that data has been received
-
-        if e.type == X.SelectionClear:
-          if e.time == X.CurrentTime or e.time >= timestamp:
-            # XXX If transfer is in progress it should be allowed to complete
-            return # All selection ownerships will be released when window is destroyed
+        (readable, ign, ign) = select([display], [], [])
+        if display in readable:
+          while display.pending_events():
+            e = display.next_event()
+            print e
+            if e.type == X.SelectionRequest:
+              if handleSelectionRequest(e):
+                # Don't break immediately, transfer will not have finished
+                # until we run out of events produced by this transfer
+                done = True
+            elif e.type == X.SelectionClear:
+              if e.time == X.CurrentTime or e.time >= timestamp:
+                # XXX If transfer is in progress it should be allowed to complete
+                return # All selection ownerships will be released when window is destroyed
+          if done: break
+        # TODO: Keyboard input...
   finally:
     win.destroy()
 
 if __name__ == '__main__':
-  #main(['goobar','secret'])
-  main('foo')
-  main('bar')
+  main(['goobar','secret'])
+  #main('foo')
+  #main('bar')
 
     #win.list_properties()
 
