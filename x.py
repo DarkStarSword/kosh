@@ -27,7 +27,6 @@ def newTimestamp(display, window):
       return e.time
 
 def refuseSelectionRequest(event):
-  #print 'Refusing', event
   resp = Xlib.protocol.event.SelectionNotify(
       requestor = event.requestor,
       selection = event.selection,
@@ -36,10 +35,14 @@ def refuseSelectionRequest(event):
       time = event.time)
   event.requestor.send_event(resp, 0, 0)
 
-def sendSelection(blob, event):
+def sendSelection(blob, target, size, event):
   print 'Sending', blob, 'to', event
+  err = Xerror.CatchError()
   prop = event.property if event.property else event.target
-  event.requestor.change_property(prop, Xatom.STRING, 8, blob)
+  event.requestor.change_property(prop, target, size, blob, onerror=err)
+  if err.get_error():
+    refuseSelectionRequest(event)
+    raise Exception(str(err.get_error()))
   resp = Xlib.protocol.event.SelectionNotify(
       requestor = event.requestor,
       selection = event.selection,
@@ -50,31 +53,37 @@ def sendSelection(blob, event):
 
 def ownSelections(display, win, selections):
   timestamp = newTimestamp(display, win)
-  for selection in selections: # FIXME: CLIPBOARD selection
+  for (i,selection) in enumerate(selections):
+    if type(selection) == type(''):
+      selection = selections[i] = display.intern_atom(selection, False)
     win.set_selection_owner(selection, timestamp)
     if display.get_selection_owner(selection) != win:
       raise Exception('Failed to own selection %i' % selection)
   return timestamp
 
-
-def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY]):
+def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']):
 
   def handleSelectionRequest(e):
     if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
         (e.selection not in selections) or # Requesting a different selection
         (e.owner != win)): # We aren't the owner
-      # FIXME: Maybe support TARGETS, TIMESTAMP, TEXT like pwsafe
-      # FIXME: Required to support TARGETS by ICCCM
       refuseSelectionRequest(e)
       return False
-    print "target: %i" % (Xatom.STRING)
     if (e.target in (Xatom.STRING, XA_TEXT)):
       # TODO: Get window title and/or command line and host to report
-      sendSelection(blob, e)
+      oldmask = e.requestor.get_attributes().your_event_mask
+      e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
+      sendSelection(blob, Xatom.STRING, 8, e)
       return True
+    elif (e.target == XA_TIMESTAMP): #untested
+      print 'Untested XA_TIMESTAMP'
+      sendSelection(timestamp, XA_TIMESTAMP, 32, e)
+    elif (e.target == XA_TARGETS): #untested
+      print 'Untested XA_TARGETS'
+      sendSelection([Xatom.STRING, XA_TEXT, XA_TIMESTAMP, XA_TARGETS], XA_TARGETS, 32, e)
     else:
       refuseSelectionRequest(e)
-      return False
+    return False
 
   if type(blobs) == type(''): blobs = [blobs]
   try:
@@ -90,25 +99,37 @@ def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY]):
 
   try:
     for blob in blobs:
-      done = False
+      awaitingCompletion = []
       timestamp = ownSelections(display, win, selections)
 
+      timeout = None
       while 1:
-        (readable, ign, ign) = select([display], [], [])
+        (readable, ign, ign) = select([display], [], [], timeout)
+        
+        if not readable and awaitingCompletion == []:
+          break
+
         if display in readable:
           while display.pending_events():
             e = display.next_event()
-            print e
             if e.type == X.SelectionRequest:
               if handleSelectionRequest(e):
-                # Don't break immediately, transfer will not have finished
-                # until we run out of events produced by this transfer
-                done = True
+                # Don't break immediately, transfer will not have finished.
+                # Wait until the property has been deleted by the requestor
+                awaitingCompletion.append((e.requestor, e.property))
+            elif e.type == X.PropertyNotify:
+              if (e.window, e.atom) in awaitingCompletion \
+                  and e.state == 1: # Deleted
+                awaitingCompletion.remove((e.window, e.atom))
+                # Some programs, such as firefox (when pasting with
+                # shift+insert), don't expect the selection to change suddenly
+                # and behave badly if it does, so wait a moment before ending:
+                timeout = 0.01
             elif e.type == X.SelectionClear:
               if e.time == X.CurrentTime or e.time >= timestamp:
-                # XXX If transfer is in progress it should be allowed to complete
-                return # All selection ownerships will be released when window is destroyed
-          if done: break
+                # If transfer is in progress it should be allowed to complete:
+                if awaitingCompletion == []: return
+                timeout = 0.01
         # TODO: Keyboard input...
   finally:
     win.destroy()
