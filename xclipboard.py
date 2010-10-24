@@ -5,9 +5,13 @@ try:
   from Xlib import X, Xatom, error as Xerror
   import Xlib.display
 except ImportError:
-  raise
+  print 'Error importing python-Xlib, X clipboard integration will be unavailable'
 
 from select import select
+
+class XlibNotFound(Exception): pass
+class XFailConnection(Exception): pass
+
 
 def newTimestamp(display, window):
   """
@@ -26,7 +30,11 @@ def newTimestamp(display, window):
       window.change_attributes(event_mask = oldmask)
       return e.time
 
-def refuseSelectionRequest(event):
+def _refuseSelectionRequest(event):
+  """
+  Respond to a selection request with an empty property to reject the
+  selection request.
+  """
   resp = Xlib.protocol.event.SelectionNotify(
       requestor = event.requestor,
       selection = event.selection,
@@ -35,13 +43,18 @@ def refuseSelectionRequest(event):
       time = event.time)
   event.requestor.send_event(resp, 0, 0)
 
-def sendSelection(blob, target, size, event):
+def _sendSelection(blob, type, size, event):
+  """
+  Positively respond to a selection request (event) by passing the blob of type
+  type (with appropriate format size for the type - refer to the ICCCM) to the
+  requester specified in the event.
+  """
   print 'Sending', blob, 'to', event
   err = Xerror.CatchError()
   prop = event.property if event.property else event.target
-  event.requestor.change_property(prop, target, size, blob, onerror=err)
+  event.requestor.change_property(prop, type, size, blob, onerror=err)
   if err.get_error():
-    refuseSelectionRequest(event)
+    _refuseSelectionRequest(event)
     raise Exception(str(err.get_error()))
   resp = Xlib.protocol.event.SelectionNotify(
       requestor = event.requestor,
@@ -51,7 +64,14 @@ def sendSelection(blob, target, size, event):
       time = event.time)
   event.requestor.send_event(resp, 0, 0)
 
-def ownSelections(display, win, selections):
+def _ownSelections(display, win, selections):
+  """
+  Have the window take ownership of a list of selections on the given display.
+
+  Selections can be an atom or the name of an atom. If the name of an atom is
+  provided, it's entry in the selections list will be replaced by the atom it
+  resolves to.
+  """
   timestamp = newTimestamp(display, win)
   for (i,selection) in enumerate(selections):
     if type(selection) == type(''):
@@ -61,35 +81,47 @@ def ownSelections(display, win, selections):
       raise Exception('Failed to own selection %i' % selection)
   return timestamp
 
-def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']):
+def sendViaClipboard(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']):
+  """
+  Send a list of blobs via the clipboard (using X selections, cut buffers are
+  not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
+  selections are used for middle click and shift+insert pasting, while the
+  CLIPBOARD selection is often used by Ctrl+V pasting.
+
+  Raises an XlibNotFound exception if python-xlib failed to import.
+  Raises an XFailConnection exception if connecting to the X DISPLAY failed.
+  """
+
+  try: Xlib
+  except NameError: raise XlibNotFound()
 
   def handleSelectionRequest(e):
     if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
         (e.selection not in selections) or # Requesting a different selection
         (e.owner != win)): # We aren't the owner
-      refuseSelectionRequest(e)
+      _refuseSelectionRequest(e)
       return False
     if (e.target in (Xatom.STRING, XA_TEXT)):
       # TODO: Get window title and/or command line and host to report
       oldmask = e.requestor.get_attributes().your_event_mask
       e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
-      sendSelection(blob, Xatom.STRING, 8, e)
+      _sendSelection(blob, Xatom.STRING, 8, e)
       return True
     elif (e.target == XA_TIMESTAMP): #untested
       print 'Untested XA_TIMESTAMP'
-      sendSelection(timestamp, XA_TIMESTAMP, 32, e)
+      _sendSelection(timestamp, XA_TIMESTAMP, 32, e)
     elif (e.target == XA_TARGETS): #untested
       print 'Untested XA_TARGETS'
-      sendSelection([Xatom.STRING, XA_TEXT, XA_TIMESTAMP, XA_TARGETS], XA_TARGETS, 32, e)
+      _sendSelection([Xatom.STRING, XA_TEXT, XA_TIMESTAMP, XA_TARGETS], XA_TARGETS, 32, e)
     else:
-      refuseSelectionRequest(e)
+      _refuseSelectionRequest(e)
     return False
 
   if type(blobs) == type(''): blobs = [blobs]
   try:
     display = Xlib.display.Display()
   except Xerror.DisplayError:
-    raise
+    raise XFailConnection()
   screen = display.screen()
   win = screen.root.create_window(0,0,1,1,0,0)
 
@@ -100,7 +132,7 @@ def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']):
   try:
     for blob in blobs:
       awaitingCompletion = []
-      timestamp = ownSelections(display, win, selections)
+      timestamp = _ownSelections(display, win, selections)
 
       timeout = None
       while 1:
@@ -135,36 +167,4 @@ def main(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']):
     win.destroy()
 
 if __name__ == '__main__':
-  main(['goobar','secret'])
-  #main('foo')
-  #main('bar')
-
-    #win.list_properties()
-
-
-    # Get timestamp to use with SetS
-
-    #SetSelectionOwner(Xatom.PRIMARY, win, timestamp)
-    #owner = GetSelectionOwner(Xatom.PRIMARY)
-    #if (owner != Window):
-    #  Failure
-
-    #receive SelectionRequest event
-    #  If timestamp invalid refuse by sending requestor a SelectionNotify with property set to None (SendEvent request with empty event mask)
-    #  If property is None requestor is an obsolete client - use target atom as property name for the reply
-    #  Otherwise use target to decide on form into which selection is to be converted (parameters in property depending on definition of target)
-    #  If selection cannot be converted to target form, refuse as above
-
-    #  If property is not none, place the result of conversion into specified property on requestor window and set property type to appropriate value (need not be the same as specified target)
-    #  If failure, must refuse as above
-
-    #  If property successfully stored, acknowledge by sending SelectionNotify event (SendEvent with empty mask) - selection,target,time,property should be set to values from SelectionRequest (Note: property set to None indicates conversion fail)
-
-    #  No need to worry about deleting resource - requestor is responsible for that by convention
-    #  Can express interest in PropertyNotify event for requestor window and wait until property has been deleted before assuming selection data transferred.
-
-
-    #  When another client gains ownership of selection, receive SelectionClear event
-
-    #  Give up ownership with SetSelectionOwner, owner specified as None and timestamp as original
-
+  sendViaClipboard(['testuser','secret'])
