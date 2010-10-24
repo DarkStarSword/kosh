@@ -25,6 +25,7 @@ class Bug(Exception): pass
 class ReadOnlyPassEntry(Exception): pass
 
 passDefaultFieldOrder = ['Username','Password']
+passDefaultCopyFieldOrder = ['Username','Password']
 
 class _masterKey(object):
   # TODO: Add timeout
@@ -214,6 +215,24 @@ class passEntry(dict):
           fields.remove(field)
       for field in fields:
         yield field
+
+    return sortedGen(self, order)
+
+  def clipIter(self):
+    """
+    Return an iterator that will iterate over the contents of the fields in an
+    order suitable for passing to the X clipboard. This can be overridden on a
+    per entry basis.
+    """
+    order = passDefaultCopyFieldOrder
+    if 'CopyFieldOrder' in self.meta:
+      order = self.meta['CopyFieldOrder']
+
+    def sortedGen(self, order):
+      fields = self.keys()
+      for field in order:
+        if field in fields:
+          yield self[field]
 
     return sortedGen(self, order)
 

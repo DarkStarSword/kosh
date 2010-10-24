@@ -9,7 +9,8 @@ import time
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
       'f5': 'showOlder',
-      'f6': 'showNewer'
+      'f6': 'showNewer',
+      'y': 'yank',
       }
 
   def __init__(self, db, pwList):
@@ -56,6 +57,11 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     if self.showing.newer is not None:
       self.showing = self.showing.newer
       self.pwList.show(self.showing)
+
+  def yank(self, size, key):
+    import xclipboard
+    print list(self.showing.clipIter())
+    xclipboard.sendViaClipboard(self.showing.clipIter())
 
 class passwordForm(urwid.WidgetWrap):
   def __init__(self):

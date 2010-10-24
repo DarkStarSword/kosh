@@ -52,7 +52,7 @@ def _sendSelection(blob, type, size, event):
   print 'Sending', blob, 'to', event
   err = Xerror.CatchError()
   prop = event.property if event.property else event.target
-  event.requestor.change_property(prop, type, size, blob, onerror=err)
+  event.requestor.change_property(prop, type, size, str(blob), onerror=err)
   if err.get_error():
     _refuseSelectionRequest(event)
     raise Exception(str(err.get_error()))
