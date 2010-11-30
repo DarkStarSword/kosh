@@ -1,19 +1,44 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.6
 # vi:sw=2:ts=2:expandtab
 
 from __future__ import print_function
 
 import pexpect
 
+ttycolours = {
+    'dark red'    : '[0;31;40m',
+    'red'         : '[1;31;40m',
+    'dark green'  : '[0;32;40m',
+    'green'       : '[1;32;40m',
+    'dark yellow' : '[0;33;40m',
+    'yellow'      : '[1;33;40m',
+    'dark blue'   : '[0;34;40m',
+    'blue'        : '[1;34;40m',
+    'reset'       : '[0;37;40m',
+}
+
 def cprint(colour, msg, sep=' ', end='\n', file=None):
-  ttycolours = {
-      'red'    : '[1;31;40m',
-      'green'  : '[1;32;40m',
-      'yellow' : '[1;33;40m',
-      'reset'  : '[0;37;40m',
-      }
   try:
     print(ttycolours[colour] + msg + ttycolours['reset'], sep=sep, end=end, file=file)
+  except KeyError:
+    raise
+
+def confirm(prompt, default=None):
+  ret = ''
+  prompt = prompt + ' ' + {
+      True:  '(Y,n)',
+      False: '(y,N)',
+      None:  '(y,n)',
+      }[default] + ': '
+  while ret not in ['y', 'n']:
+    ret = raw_input(prompt).lower()
+    if default is not None and ret == '':
+      return default
+  return ret == 'y'
+
+def cconfirm(colour, prompt, default=None):
+  try:
+    return confirm(ttycolours[colour] + prompt + ttycolours['reset'], default=default)
   except KeyError:
     raise
 
@@ -75,11 +100,6 @@ def test_expect_groups():
         print("\nfail:'\nMatched %s\nnot     %s\n"%(e,str(ret),str(g)))
       else:
         print('ok')
-
-test_expect_groups()
-import sys
-sys.exit(0)
-
 
 def change_tty_passwd(oldpass, newpass, tty=None):
   if tty is None:
@@ -245,32 +265,76 @@ def change_ssh_passwd(host, username, oldpass, newpass):
 #
 #
 
+def update_config(filename, oldpass, newpass):
+  import tempfile, os, re, difflib
+
+  # Fixme: handle errors
+  fp = open(filename, 'rb')
+  original = fp.readlines()
+  fp.close()
+
+  oldcompiled = re.compile(r'\b%s\b'%oldpass)
+  newcompiled = re.compile(r'\b%s\b'%newpass)
+  modified = [ oldcompiled.sub(newpass, x) for x in original ]
+
+  diff = list(difflib.unified_diff(original, modified, filename, filename))
+
+  if diff == []:
+    cprint('red', 'WARNING: Password not matched in %s, not updating'%filename)
+    return False
+
+  for line in diff:
+    {
+        '-' : lambda x : cprint('dark red', x, end=''),
+        '+' : lambda x : cprint('dark green', x, end=''),
+        '@' : lambda x : cprint('blue', x, end=''),
+        }.get(line[0], lambda x : print(x, end='')) \
+            (reduce(lambda x,(re,rep): re.sub(rep,x),
+              [
+                (oldcompiled, '<OLD PASS>'),
+                (newcompiled, '<NEW PASS>')
+              ], line))
+
+  if cconfirm('blue', '\nApply change?', True):
+    # FIXME: Handle errors
+    # FIXME: Permissions?
+    # FIXME: Symbolic links?
+    with tempfile.NamedTemporaryFile(mode='wb', delete=False,
+        prefix=os.path.basename(filename),
+        dir=os.path.dirname(filename)) as fp:
+      fp.writelines(modified)
+      fp.close()
+      if os.path.exists(filename):
+        os.rename(filename, filename+'~')
+      os.rename(fp.name, filename)
+
 def main():
   import getpass, sys
   username = oldpass = newpass = newpass1 = ''
-  while username == '':
-    username = raw_input('username: ')
+  #while username == '':
+  #  username = raw_input('username: ')
   while oldpass == '':
     oldpass = getpass.getpass('old password: ')
-  #while newpass == '' || newpass != newpass1:
-  #  newpass = getpass.getpass('new password: ')
-  #  newpass1 = getpass.getpass('Confirm new password: ')
+  while newpass == '' or newpass != newpass1:
+    newpass = getpass.getpass('new password: ')
+    newpass1 = getpass.getpass('Confirm new password: ')
 
-  for host in sys.argv[1:]:
-    try:
-      cprint('yellow', 'Verifying password on %s...'%host)
-      if host == 'localhost':
-        change_tty_passwd(oldpass, newpass)
-      else:
-        try:
-          if verify_ssh_passwd(host, username, oldpass):
-            cprint('green', 'Ok')
-          else:
-            cprint('red', 'not ok')
-        except pexpect.TIMEOUT, e:
-          cprint('red', 'timeout')
-    except:
-      cprint('red', 'Exception verifying password on %s'%host)
+
+  # for host in sys.argv[1:]:
+  #   try:
+  #     cprint('yellow', 'Verifying password on %s...'%host)
+  #     if host == 'localhost':
+  #       change_tty_passwd(oldpass, newpass)
+  #     else:
+  #       try:
+  #         if verify_ssh_passwd(host, username, oldpass):
+  #           cprint('green', 'Ok')
+  #         else:
+  #           cprint('red', 'not ok')
+  #       except pexpect.TIMEOUT, e:
+  #         cprint('red', 'timeout')
+  #   except:
+  #     cprint('red', 'Exception verifying password on %s'%host)
 
   # for host in sys.argv[1:]:
   #   try:
@@ -282,4 +346,10 @@ def main():
   #   except:
   #     cprint('red', 'Password change failed on %s'%host)
 
-if __name__ == '__main__': main()
+  for config in sys.argv[1:]:
+    cprint('yellow', 'Updating %s...'%config)
+    update_config(config, oldpass, newpass)
+
+if __name__ == '__main__':
+  #test_expect_groups()
+  main()
