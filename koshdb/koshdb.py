@@ -385,6 +385,21 @@ class KoshDB(dict):
   def _changeMasterPass(self, oldpass, newpass):
     raise Exception('unimplemented')
 
+  def importEntry(self, entry):
+    newE = passEntry(self._masterKeys[0])
+    for k in entry:
+      if k == 'name':
+        newE.name = entry[k]
+      else:
+        newE[k] = entry[k]
+    for e in self: # dict isn't hashable, so can't use in without implementing __hash__ in a reliable manner
+      if newE == self[e]:
+        return False
+    if not newE.name:
+      raise Exception('No name on imported entry, not importing')
+    self[newE.name] = newE
+    return True
+
 if __name__ == '__main__':
   import tempfile
   filename = tempfile.mktemp()
