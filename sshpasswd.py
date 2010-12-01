@@ -86,6 +86,18 @@ def expect_groups(self, groups):
   newgroups = flatten1([[g]*len(g) for g in groups])
   return newgroups[ret]
 
+def expect_groups_exception(self, groups, exceptiongroups):
+  """
+  Like expect_groups, but if an entry in exceptiongroups is matched, this will
+  raise the corresponding exception instead.
+  exceptiongroups is a dict mapping expressions to exceptions
+  """
+  ret = expect_groups(self, groups + exceptiongroups.keys())
+  if ret in groups:
+    return ret
+  raise exceptiongroups[ret]
+
+
 def test_expect_groups():
   groups = [old_pass_prompts, new_pass_prompts, confirm_pass_prompts, failure_prompts, success_prompts]
   for g in groups:
@@ -109,43 +121,47 @@ def change_tty_passwd(oldpass, newpass, tty=None):
     tty.prompt()
     tty.sendline('passwd')
 
-  cprint('yellow','waiting for current password prompt...')
-  # FIXME: Alternate prompts?
-  result = tty.expect(['current.*password: ', 'Old Password: ', pexpect.TIMEOUT, pexpect.EOF])
-  if result >= 2:
-    cprint('red', 'timeout or EOF while waiting for current password prompt')
-    print(tty.before)
-    raise PasswordChangeFailure()
+  state = PasswordChangeFailure
 
-  cprint('yellow','sending old password...')
-  tty.sendline(oldpass)
+  try:
+    # FIXME: root user will not be prompted for current password
+    print('waiting for current password prompt...')
+    result = expect_groups(tty, [old_pass_groups])
 
-  result = tty.expect(['Enter new password: ', 'New Password: ', 'password unchanged', pexpect.TIMEOUT, pexpect.EOF])
-  if result >= 2:
-    cprint('red', 'Wrong old password')
-    print(tty.before)
-    raise PasswordChangeFailure()
+    cprint('yellow','sending old password...')
+    tty.sendline(oldpass)
 
-  # cprint('yellow','sending new password...')
-  # tty.sendline(newpass)
+    result = expect_groups_exception(tty, [new_pass_prompts],
+        {failure_prompts: state('Bad old password!')})
 
-  # result = tty.expect(['Re-type new password: ', 'Reenter New Password: ', 'password unchanged', pexpect.TIMEOUT, pexpect.EOF])
-  # if result >= 2:
-  #   cprint('red', 'Problem with new password')
-  #   print(tty.before)
-  #   raise PasswordChangeFailure() # FIXME - could have changed
+    state = PasswordChangeFailure # FIXME: From here on it is possible that the change succeeds
 
-  # cprint('yellow','Re-sending new password...')
-  # tty.sendline(newpass)
+    cprint('yellow','sending new password...')
+    tty.sendline(newpass)
 
-  # result = tty.expect(['Password changed.', pexpect.TIMEOUT, pexpect.EOF])
-  # if result >= 1:
-  #   cprint('red', 'Confirming new password appears to have failed?')
-  #   print(tty.before)
-  #   raise PasswordChangeFailure() # FIXME - could have changed
+    result = expect_groups_exception(tty, [confirm_pass_prompts],
+        {failure_prompts: state('Problem with new password')})
 
-  tty.close(True)
-  # FIXME: Look at passwd code for other possible results
+    cprint('yellow','Re-sending new password...')
+    tty.sendline(newpass)
+
+    result = expect_groups_exception(tty, [success_prompts],
+        {failure_prompts: state('Confirming new password appears to have failed?')})
+
+  except PasswordChangeFailure, e:
+    cprint('red', str(e))
+    #print log
+    raise
+  except pexpect.TIMEOUT:
+    cprint('red', 'timeout')
+    #print log
+    raise state()
+  except pexpect.EOF:
+    cprint('red', 'Unexpected end of output')
+    #print log
+    raise state()
+  finally:
+    tty.close(True)
 
 class LoginFailure(Exception): pass
 
