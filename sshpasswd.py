@@ -165,44 +165,41 @@ def change_tty_passwd(oldpass, newpass, tty=None):
 
 class LoginFailure(Exception): pass
 
-import pxssh
-class mypxssh(pxssh.pxssh):
-  def synch_original_prompt (self):
-    import time
-    """
-    Overriding the pxssh method to allow the inital read to timeout if there is
-    nothing to read.
-    """
-    try:
-      self.read_nonblocking(size=10000,timeout=1) # GAS: Clear out the cache before getting
-    except pexpect.TIMEOUT: pass
-    time.sleep(0.1)
-    self.sendline()
-    time.sleep(0.5)
-    x = self.read_nonblocking(size=1000,timeout=1)
-    time.sleep(0.1)
-    self.sendline()
-    time.sleep(0.5)
-    a = self.read_nonblocking(size=1000,timeout=1)
-    time.sleep(0.1)
-    self.sendline()
-    time.sleep(0.5)
-    b = self.read_nonblocking(size=1000,timeout=1)
-    ld = self.levenshtein_distance(a,b)
-    len_a = len(a)
-    if len_a == 0:
-        return False
-    if float(ld)/len_a < 0.4:
-        return True
-    return False
-
+def replace_synch_original_prompt (self):
+  import time
+  """
+  Overriding the pxssh method to allow the inital read to timeout if there is
+  nothing to read.
+  """
+  try:
+    self.read_nonblocking(size=10000,timeout=1) # GAS: Clear out the cache before getting
+  except pexpect.TIMEOUT: pass
+  time.sleep(0.1)
+  self.sendline()
+  time.sleep(0.5)
+  x = self.read_nonblocking(size=1000,timeout=1)
+  time.sleep(0.1)
+  self.sendline()
+  time.sleep(0.5)
+  a = self.read_nonblocking(size=1000,timeout=1)
+  time.sleep(0.1)
+  self.sendline()
+  time.sleep(0.5)
+  b = self.read_nonblocking(size=1000,timeout=1)
+  ld = self.levenshtein_distance(a,b)
+  len_a = len(a)
+  if len_a == 0:
+      return False
+  if float(ld)/len_a < 0.4:
+      return True
+  return False
 
 def ssh_open(host, username, password = '', force_password = True):
   import pxssh
   import StringIO
   log = StringIO.StringIO() # or just sys.stdout?
-  #s = pxssh.pxssh(logfile=log)
-  s = mypxssh(logfile=log)
+  pxssh.pxssh.synch_original_prompt = replace_synch_original_prompt
+  s = pxssh.pxssh(logfile=log)
   s.force_password = force_password
   try:
     s.login(host, username, password)
