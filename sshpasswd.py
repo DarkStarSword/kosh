@@ -285,9 +285,13 @@ def update_config(filename, oldpass, newpass):
   import tempfile, os, re, difflib
 
   # Fixme: handle errors
-  fp = open(filename, 'rb')
-  original = fp.readlines()
-  fp.close()
+  try:
+    fp = open(filename, 'rb')
+    original = fp.readlines()
+    fp.close()
+  except IOError, e:
+    cprint('red', 'IOError processing %s: %s'%(filename, str(e)))
+    raise PasswordChangeFailure()
 
   oldcompiled = re.compile(r'\b%s\b'%oldpass)
   newcompiled = re.compile(r'\b%s\b'%newpass)
@@ -312,59 +316,99 @@ def update_config(filename, oldpass, newpass):
               ], line))
 
   if cconfirm('blue', '\nApply change?', True):
-    # FIXME: Handle errors
-    # FIXME: Permissions?
-    # FIXME: Symbolic links?
-    with tempfile.NamedTemporaryFile(mode='wb', delete=False,
-        prefix=os.path.basename(filename),
-        dir=os.path.dirname(filename)) as fp:
-      fp.writelines(modified)
-      fp.close()
-      if os.path.exists(filename):
-        os.rename(filename, filename+'~')
-      os.rename(fp.name, filename)
+    try:
+      # FIXME: Permissions?
+      # FIXME: Symbolic links?
+      with tempfile.NamedTemporaryFile(mode='wb', delete=False,
+          prefix=os.path.basename(filename),
+          dir=os.path.dirname(filename)) as fp:
+        fp.writelines(modified)
+        fp.close()
+        if os.path.exists(filename):
+          os.rename(filename, filename+'~')
+        os.rename(fp.name, filename)
+    except IOError, e:
+      raise PasswordChangeFailure(e)
+
+
+class UnknownProtocol(Exception): pass
+class ProtocolParseException(Exception): pass
+
+def parse_proto(url):
+  def parse_ssh(url):
+    try:
+      (user, host) = url.split('@', 1)
+    except ValueError:
+      raise ProtocolParseException('No username found in %s'%url)
+    return (user, host)
+  def unknown_proto(url):
+    raise UnknownProtocol(proto)
+
+  try:
+    (proto, url) = url.split('://', 1)
+  except ValueError:
+    raise ProtocolParseException('No protocol found in %s'%url)
+  return (proto, {
+    'verifyssh' : parse_ssh,
+    'ssh'       : parse_ssh,
+    'localhost' : lambda x : None,
+    'conf'      : lambda x : x,
+    }.get(proto, unknown_proto)(url))
+
 
 def main():
   import getpass, sys
-  username = oldpass = newpass = newpass1 = ''
-  #while username == '':
-  #  username = raw_input('username: ')
+
+  urls = [parse_proto(x) for x in sys.argv[1:]]
+  protos = set(zip(*urls)[0])
+
+  if (len(urls) == 0):
+    print('No URLs specified')
+    return
+
+  oldpass = newpass = newpass1 = ''
   while oldpass == '':
     oldpass = getpass.getpass('old password: ')
-  while newpass == '' or newpass != newpass1:
-    newpass = getpass.getpass('new password: ')
-    newpass1 = getpass.getpass('Confirm new password: ')
+  if protos.intersection(['ssh','conf']):
+    while newpass == '' or newpass != newpass1:
+      newpass = getpass.getpass('new password: ')
+      newpass1 = getpass.getpass('Confirm new password: ')
 
+  for (proto, data) in urls:
+    if proto in ('verifyssh', 'ssh'):
+      (username, host) = data
 
-  # for host in sys.argv[1:]:
-  #   try:
-  #     cprint('yellow', 'Verifying password on %s...'%host)
-  #     if host == 'localhost':
-  #       change_tty_passwd(oldpass, newpass)
-  #     else:
-  #       try:
-  #         if verify_ssh_passwd(host, username, oldpass):
-  #           cprint('green', 'Ok')
-  #         else:
-  #           cprint('red', 'not ok')
-  #       except pexpect.TIMEOUT, e:
-  #         cprint('red', 'timeout')
-  #   except:
-  #     cprint('red', 'Exception verifying password on %s'%host)
+    if proto == 'verifyssh':
+      try:
+        cprint('yellow', 'Verifying password on %s...'%host)
+        if verify_ssh_passwd(host, username, oldpass):
+          cprint('green', 'Ok')
+        else:
+          cprint('red', 'not Ok')
+      except pexpect.TIMEOUT, e:
+        cprint('red', 'timeout')
+      except:
+        cprint('red', 'Exception verifying password on %s'%host)
 
-  # for host in sys.argv[1:]:
-  #   try:
-  #     cprint('yellow', 'Changing password on %s...'%host)
-  #     if host == 'localhost':
-  #       change_tty_passwd(oldpass, newpass)
-  #     else:
-  #       change_ssh_passwd(host, username, oldpass, newpass)
-  #   except:
-  #     cprint('red', 'Password change failed on %s'%host)
+    if proto == 'ssh': pass
+      # try:
+      #   cprint('yellow', 'Changing password on %s...'%host)
+      #   change_ssh_passwd(host, username, oldpass, newpass)
+      # except:
+      #   cprint('red', 'Password change failed on %s'%host)
 
-  for config in sys.argv[1:]:
-    cprint('yellow', 'Updating %s...'%config)
-    update_config(config, oldpass, newpass)
+    if proto == 'localhost':
+      try:
+        change_tty_passwd(oldpass, newpass)
+      except:
+        cprint('red', 'Local password change failed!')
+
+    if proto == 'conf':
+      try:
+        cprint('yellow', 'Updating %s...'%data)
+        update_config(data, oldpass, newpass)
+      except:
+        cprint('red', 'Updating configuration file failed!')
 
 if __name__ == '__main__':
   #test_expect_groups()
