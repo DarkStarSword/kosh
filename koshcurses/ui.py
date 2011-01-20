@@ -38,7 +38,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       if key in ['l', 'tab']: return self.keypress(size, 'right')
       # FIXME: edit, delete, yank
     selection = self.lb.get_focus()
-    if selection[1] != self.selection:
+    if selection[0] and selection[1] != self.selection:
       self.showing = self.db[selection[0].get_label()]
       self.pwList.show(self.showing)
       self.selection = selection[1]
