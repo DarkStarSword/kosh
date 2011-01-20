@@ -259,9 +259,10 @@ class KoshDB(dict):
       if prompt('Confirm passphrase:') == passphrase:
         break
       msg = failmsg
-    self._masterKeys = [_masterKey(passphrase)]
+    masterKey = _masterKey(passphrase)
+    self._masterKeys = [masterKey]
     self._oldEntries = []
-    self._lines = [_masterKey(passphrase)]
+    self._lines = [masterKey]
     self._write(filename)
 
   def write(self):
