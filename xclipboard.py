@@ -4,14 +4,15 @@
 try:
   from Xlib import X, Xatom, error as Xerror
   import Xlib.display
+  defSelections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']
 except ImportError:
   print 'Error importing python-Xlib, X clipboard integration will be unavailable'
+  defSelections = None
 
 from select import select
 
 class XlibNotFound(Exception): pass
 class XFailConnection(Exception): pass
-
 
 def newTimestamp(display, window):
   """
@@ -81,7 +82,7 @@ def _ownSelections(display, win, selections):
       raise Exception('Failed to own selection %i' % selection)
   return timestamp
 
-def sendViaClipboard(blobs, selections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']):
+def sendViaClipboard(blobs, selections = defSelections):
   """
   Send a list of blobs via the clipboard (using X selections, cut buffers are
   not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
