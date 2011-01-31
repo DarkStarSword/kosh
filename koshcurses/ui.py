@@ -20,7 +20,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     urwid.WidgetWrap.__init__(self, self.lb)
 
   def refresh(self):
-    self.content = [ urwid.Button(x, self.select) for x in self.db ]
+    def cicmp(x, y):
+      return cmp(x.lower(), y.lower())
+    self.content = [ urwid.Button(x, self.select) for x in sorted(self.db, cicmp) ]
     self.lb = urwid.ListBox(self.content)
     self.selection = 0
     self._set_w(self.lb)
