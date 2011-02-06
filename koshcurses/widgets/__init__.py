@@ -4,6 +4,8 @@
 import urwid
 import utf8
 
+from viCommandBar import viCommandBar
+
 class keymapwid(object):
   keymap = {}
   def keypress(self, size, key):
