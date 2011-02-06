@@ -149,7 +149,8 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
       ('weight', 0.75, self.pwList),
       self.pwEntry
       ] )
-    urwid.WidgetWrap.__init__(self, self.container)
+    self.vi = widgets.viCommandBar(self.container)
+    urwid.WidgetWrap.__init__(self, self.vi)
   
   def new(self, size, key):
     import koshdb # FIXME: decouple this
@@ -173,7 +174,4 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     
 
   def showModal(self, parent=None):
-    def exit_on_input(input):
-      if input in ['esc']:
-        raise urwid.ExitMainLoop()
-    urwid.MainLoop(self, unhandled_input=exit_on_input).run()
+    urwid.MainLoop(self).run()
