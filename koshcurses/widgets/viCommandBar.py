@@ -38,6 +38,7 @@ class viCommandBar(urwid.WidgetWrap):
   COMMANDS = {
     'q': 'quit',
     'help': 'help',
+    'set': 'set_variable',
   }
 
   def __init__(self, body, search_function=None):
@@ -98,11 +99,11 @@ class viCommandBar(urwid.WidgetWrap):
       self.normal_mode()
 
   def exec_command(self):
-    args = self._status.get_edit_text().split()
+    args = self._status.get_edit_text().split(None, 1)
     self.normal_mode()
     if not args:
       return
-    command = args.pop(0)
+    (command,args) = (args[0], args[1] if len(args) > 1 else None)
     if command in self.COMMANDS:
       getattr(self, self.COMMANDS[command])(args)
     else:
@@ -129,11 +130,12 @@ class viCommandBar(urwid.WidgetWrap):
       if ret == 0:
         self._search_function(None)
 
-  def quit(self, *args):
+  def quit(self, args):
     raise urwid.ExitMainLoop()
 
-  def help(self, *args):
+  def help(self, args):
     # STUB. TODO: Help message. FIXME: Align. Perhaps better command names
+    # FIXME: Display by main contents and handling special mode
     def exit_on_input(input):
       if input.lower() in ['esc', 'q']:
         raise urwid.ExitMainLoop()
@@ -147,6 +149,57 @@ class viCommandBar(urwid.WidgetWrap):
         contents += [urwid.Text('  %s - %s'%(key, self.KEYMAP[mode][key]))]
     container = urwid.ListBox(contents)
     urwid.MainLoop(container, unhandled_input = exit_on_input).run()
+
+  def displayVariables(self, vars):
+    # FIXME: Display by main contents and handling special mode
+    def exit_on_input(input):
+      if input.lower() in ['esc', 'q', 'enter']:
+        raise urwid.ExitMainLoop()
+
+    if vars is None:
+      vars = self.variables.keys()
+    contents = []
+    for v in vars:
+      if v not in self.variables:
+        contents += ['Unknown variable: %s'%v]
+      elif isinstance(self.variables[v],bool):
+        if self.variables[v]:
+          contents += [v]
+        else:
+          contents += ['no%s'%v]
+      else:
+        contents += ['%s=%s'%(v,self.variables[v] if v in self.variables else '')]
+    container = urwid.ListBox(map(urwid.Text,contents))
+    urwid.MainLoop(container, unhandled_input = exit_on_input).run()
+
+  def set_variable(self, args):
+    if not args:
+      return self.displayVariables(None)
+    updateVars={}
+    showArgs=[]
+    args = args.split()
+    while len(args):
+      var = args.pop(0)
+      if '=' in var:
+        (v,s) = var.split('=',1)
+        s += ' '.join(args)
+        args = []
+      else:
+        if var.startswith('no'):
+          (v,s) = (var.lstrip('no'), False)
+        else:
+          (v,s) = (var, True)
+      if v not in self.variables:
+        return self.update_status('Unknown option: %s'%v)
+      elif s==True and not isinstance(self.variables[v],bool):
+        showArgs += [v]
+      elif type(self.variables[v]) != type(s):
+          return self.update_status('Invalid Argument: %s'%var)
+      else:
+        updateVars[v] = s
+    if showArgs:
+      return self.displayVariables(showArgs)
+    self.variables.update(updateVars)
 
 if __name__ == '__main__':
   b = urwid.SolidFill('x')
