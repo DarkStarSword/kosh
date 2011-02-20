@@ -275,9 +275,13 @@ class KoshDB(dict):
     bug = False
 
     entries = copy(self._masterKeys) + self.values() + copy(self._oldEntries)
+
+    dirname = os.path.expanduser(os.path.dirname(filename))
+    if not os.path.exists(dirname):
+      os.makedirs(dirname, mode=0700)
     with NamedTemporaryFile(mode='wb', delete=False,
         prefix=os.path.basename(filename),
-        dir=os.path.dirname(filename)) as fp:
+        dir=dirname) as fp:
 
       fp.write(KoshDB.FILE_HEADER)
 

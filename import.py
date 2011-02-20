@@ -156,7 +156,7 @@ def importCSV(filename, headers, db):
   print ' done'
   fp.close()
 
-passdb_default = '~/.koshdb' # FIXME: Also declared in kosh
+passdb_default = '~/.kosh/koshdb' # FIXME: Also declared in kosh
 def getParameters():
   # FIXME: Perhaps combine with main kosh getParameters...
   # or git approach is somewhat appealing, but for now:
