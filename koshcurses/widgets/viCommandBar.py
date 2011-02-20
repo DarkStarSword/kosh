@@ -58,7 +58,7 @@ class viCommandBar(urwid.WidgetWrap):
     })
 
   def update_status(self, status):
-    if type(status) == str:
+    if type(status) in (str, unicode):
       self._status = urwid.Text(status)
     else:
       self._status = status

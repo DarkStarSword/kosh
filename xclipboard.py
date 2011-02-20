@@ -16,12 +16,14 @@ class XFailConnection(Exception): pass
 
 class ui_null(object):
   """
-  Dummy class that will noop any calls to attributes.
-  Intended to be used in place of a ui class where no interaction is to take
-  place. Returns None to all calls.
+  Dummy class that will do nothing when called, and return itself as any of
+  it's attributes.  Intended to be used in place of a ui class where no
+  interaction is to take place. Calls such as ui_null().mainloop.foo.bar.baz()
+  will not raise any exceptions.
   """
+  def __call__(self, *args): pass
   def __getattribute__(self,name):
-    return lambda *args: None
+    return self
 
 # FIXME: This shouldn't be here, and needs to be expanded
 class ui_tty(object):
@@ -65,8 +67,7 @@ def _sendSelection(blob, type, size, event, ui):
   type (with appropriate format size for the type - refer to the ICCCM) to the
   requester specified in the event.
   """
-  ui.status('Sending blob to %s'%event.requestor)
-  #ui.status('Debugging: Sending %s to %s'%(blob,event))
+  #ui.status('DEBUG: Sending %s to %s'%(repr(blob),event))
   err = Xerror.CatchError()
   prop = event.property if event.property else event.target
   event.requestor.change_property(prop, type, size, str(blob), onerror=err)
@@ -127,9 +128,9 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
     elif (e.target == XA_TIMESTAMP): #untested
       ui.status('INFO: Untested XA_TIMESTAMP')
       _sendSelection(timestamp, XA_TIMESTAMP, 32, e, ui)
-    elif (e.target == XA_TARGETS): #untested
-      ui.status('INFO: Untested XA_TARGETS')
-      _sendSelection([Xatom.STRING, XA_TEXT, XA_TIMESTAMP, XA_TARGETS], XA_TARGETS, 32, e, ui)
+    elif (e.target == XA_TARGETS): # This *seems* to work... though I am unconfident that the length is sent correctly. There may be a better way to do this.
+      import struct
+      _sendSelection(struct.pack('IIII', *map(lambda x: int(x), [XA_TARGETS, XA_TIMESTAMP, XA_TEXT, Xatom.STRING])), XA_TARGETS, 32, e, ui)
     else:
       _refuseSelectionRequest(e)
     return False
@@ -154,43 +155,66 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
   XA_TARGETS = display.intern_atom('TARGETS', True)
   XA_TIMESTAMP = display.intern_atom('TIMESTAMP', True)
 
+  ui_fds = ui.mainloop.screen.get_input_descriptors()
+  if ui_fds is None: ui_fds = []
+  select_fds = set([display] + [sys.stdin] + ui_fds)
+  ui.status('Ready to send credentials via %s... (enter skips, escape cancels)'%str(selections))
+  ui.mainloop.draw_screen()
   try:
     for blob in blobs:
-      ui.status('Ready to send blob... (enter skips, escape cancels)')
       awaitingCompletion = []
       timestamp = _ownSelections(display, win, selections)
 
       timeout = None
+      skip = False
       while 1:
-        (readable, ign, ign) = select([display], [], [], timeout)
+        if skip and awaitingCompletion == []: break
+        (readable, ign, ign) = select(select_fds, [], [], timeout)
         
         if not readable and awaitingCompletion == []:
           break
 
-        if display in readable:
-          while display.pending_events():
-            e = display.next_event()
-            if e.type == X.SelectionRequest:
-              if handleSelectionRequest(e, ui):
-                # Don't break immediately, transfer will not have finished.
-                # Wait until the property has been deleted by the requestor
-                awaitingCompletion.append((e.requestor, e.property))
-            elif e.type == X.PropertyNotify:
-              if (e.window, e.atom) in awaitingCompletion \
-                  and e.state == 1: # Deleted
-                awaitingCompletion.remove((e.window, e.atom))
-                # Some programs, such as firefox (when pasting with
-                # shift+insert), don't expect the selection to change suddenly
-                # and behave badly if it does, so wait a moment before ending:
-                timeout = 0.01
-            elif e.type == X.SelectionClear:
-              if e.time == X.CurrentTime or e.time >= timestamp:
-                # If transfer is in progress it should be allowed to complete:
-                if awaitingCompletion == []: return
-                timeout = 0.01
-        # TODO: Keyboard input...
+        for fd in readable:
+          if fd == sys.stdin:
+            char = sys.stdin.read(1)
+            if char == '\n':
+              ui.status('Skipping...')
+              skip = True
+            elif char == '\x1b':
+              ui.status('Cancelled')
+              return
+          elif fd in ui_fds:
+            ui.mainloop._update()
+
+          if fd == display:
+            while display.pending_events():
+              e = display.next_event()
+              if e.type == X.SelectionRequest:
+                if handleSelectionRequest(e, ui):
+                  # Don't break immediately, transfer will not have finished.
+                  # Wait until the property has been deleted by the requestor
+                  awaitingCompletion.append((e.requestor, e.property))
+              elif e.type == X.PropertyNotify:
+                if (e.window, e.atom) in awaitingCompletion \
+                    and e.state == 1: # Deleted
+                  awaitingCompletion.remove((e.window, e.atom))
+                  # Some programs, such as firefox (when pasting with
+                  # shift+insert), don't expect the selection to change suddenly
+                  # and behave badly if it does, so wait a moment before ending:
+                  timeout = 0.01
+              elif e.type == X.SelectionClear:
+                if e.time == X.CurrentTime or e.time >= timestamp:
+                  # If transfer is in progress it should be allowed to complete:
+                  if awaitingCompletion == []: return
+                  timeout = 0.01
+            ui.mainloop.draw_screen()
   finally:
     win.destroy()
+    display.close() # I may have introduced a bug while adding the urwid loop
+                    # stuff here - the clipboard selection remained grabbed
+                    # after destroying the window. This worked around it since
+                    # I can't see what is wrong.
+    ui.status('Clipboard Cleared')
 
 if __name__ == '__main__':
   import sys
