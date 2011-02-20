@@ -31,7 +31,7 @@ class viCommandBar(urwid.WidgetWrap):
       'enter': 'exec_command',
     },
     'SEARCH': {
-      'esc': 'normal_mode',
+      'esc': 'end_search',
       'enter': 'search',
     },
   }
@@ -43,10 +43,18 @@ class viCommandBar(urwid.WidgetWrap):
   def __init__(self, body, search_function=None):
     self._search_function = search_function
 
+    self.defaults()
     self._status = urwid.Text('')
     self._container = urwid.Frame(body, footer = self._status)
     self.normal_mode()
     urwid.WidgetWrap.__init__(self, self._container)
+
+  def defaults(self):
+    if not hasattr(self, 'variables'):
+      self.variables = {}
+    self.variables.update({
+      'incsearch': True,
+    })
 
   def update_status(self, status):
     if type(status) == str:
@@ -82,7 +90,10 @@ class viCommandBar(urwid.WidgetWrap):
         return f(size, key)
       return f()
     try:
-      return self._container.keypress(size, key)
+      ret = self._container.keypress(size, key)
+      if self._mode == 'SEARCH' and self.variables['incsearch']:
+        self.incsearch()
+      return ret
     except viStatusEdit.Cancel:
       self.normal_mode()
 
@@ -97,10 +108,26 @@ class viCommandBar(urwid.WidgetWrap):
     else:
       self.update_status('Unknown command: '+command)
 
-  def search(self, size, key):
-    self._search_function(self._status.get_edit_text())
-    normal_mode()
-    self.update_status('search '+key)
+  def _search(self):
+    search = self._status.get_edit_text()
+    return self._search_function(search)
+  
+  def incsearch(self):
+    self._search()
+
+  def end_search(self, *args):
+    self._search_function(None)
+    self.normal_mode()
+
+  def search(self, *args):
+    ret = self._search()
+    self.normal_mode()
+    if ret is None:
+      self.update_status('search cancelled')
+    else:
+      self.update_status('matched %i %s'%(ret, 'entry' if ret == 1 else 'entries'))
+      if ret == 0:
+        self._search_function(None)
 
   def quit(self, *args):
     raise urwid.ExitMainLoop()

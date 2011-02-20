@@ -16,18 +16,19 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   def __init__(self, db, pwList):
     self.db = db
     self.pwList = pwList
+    self.visibleEntries = self.db
     self.refresh()
     urwid.WidgetWrap.__init__(self, self.lb)
 
   def refresh(self):
     def cicmp(x, y):
       return cmp(x.lower(), y.lower())
-    self.content = [ urwid.Button(x, self.select) for x in sorted(self.db, cicmp) ]
+    self.content = [ urwid.Button(x, self.select) for x in sorted(self.visibleEntries, cicmp) ]
     self.lb = urwid.ListBox(self.content)
     self.selection = 0
     self._set_w(self.lb)
-    if len(self.db):
-      self.showing = self.db[self.lb.get_focus()[0].get_label()]
+    if len(self.visibleEntries):
+      self.showing = self.visibleEntries[self.lb.get_focus()[0].get_label()]
       self.pwList.show(self.showing)
 
   def keypress(self, size, key):
@@ -64,6 +65,23 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     import xclipboard
     print list(self.showing.clipIter())
     xclipboard.sendViaClipboard(self.showing.clipIter())
+
+  def search(self, search):
+    import string
+    if not search:
+      self.visibleEntries = self.db
+      ret = None
+    else:
+      self.visibleEntries = {}
+      for entry in self.db:
+        # FIXME: Don't (optionally?) search on other protected fields
+        if reduce(lambda x,y: x or search.lower() in y, map(string.lower,
+          [entry]+[v for (k,v) in self.db[entry].items()
+            if k.lower() not in ['password']]), False):
+            self.visibleEntries[entry] = self.db[entry]
+      ret = len(self.visibleEntries)
+    self.refresh()
+    return ret
 
 class passwordForm(urwid.WidgetWrap):
   def __init__(self):
@@ -149,7 +167,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
       ('weight', 0.75, self.pwList),
       self.pwEntry
       ] )
-    self.vi = widgets.viCommandBar(self.container)
+    self.vi = widgets.viCommandBar(self.container, search_function=self.pwList.search)
     urwid.WidgetWrap.__init__(self, self.vi)
   
   def new(self, size, key):
