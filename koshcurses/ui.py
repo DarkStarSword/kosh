@@ -13,9 +13,10 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       'y': 'yank',
       }
 
-  def __init__(self, db, pwList):
+  def __init__(self, db, pwList, ui):
     self.db = db
     self.pwList = pwList
+    self.ui = ui
     self.visibleEntries = self.db
     self.refresh()
     urwid.WidgetWrap.__init__(self, self.lb)
@@ -63,8 +64,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
 
   def yank(self, size, key):
     import xclipboard
-    print list(self.showing.clipIter())
-    xclipboard.sendViaClipboard(self.showing.clipIter())
+    xclipboard.sendViaClipboard(self.showing.clipIter(), ui=self.ui)
 
   def search(self, search):
     import string
@@ -162,7 +162,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   def __init__(self, db):
     self.db = weakref.proxy(db)
     self.pwEntry = passwordForm()
-    self.pwList = passwordList(self.db, self.pwEntry)
+    self.pwList = passwordList(self.db, self.pwEntry, self)
     self.container = widgets.LineColumns( [
       ('weight', 0.75, self.pwList),
       self.pwEntry
@@ -190,6 +190,9 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     # Necessary to get focus back
     self.container.set_focus(0)
     
+  def status(self, status):
+    return self.vi.update_status(status)
 
   def showModal(self, parent=None):
-    urwid.MainLoop(self).run()
+    self.mainloop = urwid.MainLoop(self)
+    self.mainloop.run()

@@ -14,6 +14,21 @@ from select import select
 class XlibNotFound(Exception): pass
 class XFailConnection(Exception): pass
 
+class ui_null(object):
+  """
+  Dummy class that will noop any calls to attributes.
+  Intended to be used in place of a ui class where no interaction is to take
+  place. Returns None to all calls.
+  """
+  def __getattribute__(self,name):
+    return lambda *args: None
+
+# FIXME: This shouldn't be here, and needs to be expanded
+class ui_tty(object):
+  def status(self, msg):
+    print msg
+
+
 def newTimestamp(display, window):
   """
   Appends a property with zero length data and obtains a timestamp from the
@@ -44,13 +59,14 @@ def _refuseSelectionRequest(event):
       time = event.time)
   event.requestor.send_event(resp, 0, 0)
 
-def _sendSelection(blob, type, size, event):
+def _sendSelection(blob, type, size, event, ui):
   """
   Positively respond to a selection request (event) by passing the blob of type
   type (with appropriate format size for the type - refer to the ICCCM) to the
   requester specified in the event.
   """
-  print 'Sending', blob, 'to', event
+  ui.status('Sending blob to %s'%event.requestor)
+  #ui.status('Debugging: Sending %s to %s'%(blob,event))
   err = Xerror.CatchError()
   prop = event.property if event.property else event.target
   event.requestor.change_property(prop, type, size, str(blob), onerror=err)
@@ -82,7 +98,7 @@ def _ownSelections(display, win, selections):
       raise Exception('Failed to own selection %i' % selection)
   return timestamp
 
-def sendViaClipboard(blobs, selections = defSelections):
+def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
   """
   Send a list of blobs via the clipboard (using X selections, cut buffers are
   not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
@@ -96,7 +112,7 @@ def sendViaClipboard(blobs, selections = defSelections):
   try: Xlib
   except NameError: raise XlibNotFound()
 
-  def handleSelectionRequest(e):
+  def handleSelectionRequest(e, ui):
     if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
         (e.selection not in selections) or # Requesting a different selection
         (e.owner != win)): # We aren't the owner
@@ -106,23 +122,31 @@ def sendViaClipboard(blobs, selections = defSelections):
       # TODO: Get window title and/or command line and host to report
       oldmask = e.requestor.get_attributes().your_event_mask
       e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
-      _sendSelection(blob, Xatom.STRING, 8, e)
+      _sendSelection(blob, Xatom.STRING, 8, e, ui)
       return True
     elif (e.target == XA_TIMESTAMP): #untested
-      print 'Untested XA_TIMESTAMP'
-      _sendSelection(timestamp, XA_TIMESTAMP, 32, e)
+      ui.status('INFO: Untested XA_TIMESTAMP')
+      _sendSelection(timestamp, XA_TIMESTAMP, 32, e, ui)
     elif (e.target == XA_TARGETS): #untested
-      print 'Untested XA_TARGETS'
-      _sendSelection([Xatom.STRING, XA_TEXT, XA_TIMESTAMP, XA_TARGETS], XA_TARGETS, 32, e)
+      ui.status('INFO: Untested XA_TARGETS')
+      _sendSelection([Xatom.STRING, XA_TEXT, XA_TIMESTAMP, XA_TARGETS], XA_TARGETS, 32, e, ui)
     else:
       _refuseSelectionRequest(e)
     return False
 
   if type(blobs) == type(''): blobs = [blobs]
+
+  # Opening the display prints 'Xlib.protocol.request.QueryExtension' to
+  # stdout, so temporarily redirect it:
+  import sys, StringIO
+  saved_stdout = sys.stdout
+  sys.stdout = StringIO.StringIO()
   try:
     display = Xlib.display.Display()
   except Xerror.DisplayError:
     raise XFailConnection()
+  finally:
+    sys.stdout = saved_stdout
   screen = display.screen()
   win = screen.root.create_window(0,0,1,1,0,0)
 
@@ -132,6 +156,7 @@ def sendViaClipboard(blobs, selections = defSelections):
 
   try:
     for blob in blobs:
+      ui.status('Ready to send blob... (enter skips, escape cancels)')
       awaitingCompletion = []
       timestamp = _ownSelections(display, win, selections)
 
@@ -146,7 +171,7 @@ def sendViaClipboard(blobs, selections = defSelections):
           while display.pending_events():
             e = display.next_event()
             if e.type == X.SelectionRequest:
-              if handleSelectionRequest(e):
+              if handleSelectionRequest(e, ui):
                 # Don't break immediately, transfer will not have finished.
                 # Wait until the property has been deleted by the requestor
                 awaitingCompletion.append((e.requestor, e.property))
@@ -168,4 +193,6 @@ def sendViaClipboard(blobs, selections = defSelections):
     win.destroy()
 
 if __name__ == '__main__':
-  sendViaClipboard(['testuser','secret'])
+  import sys
+  args = sys.argv[1:] if sys.argv[1:] else ['usage:' , sys.argv[0], ' { strings }']
+  sendViaClipboard(args, ui=ui_tty())
