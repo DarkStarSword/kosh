@@ -9,7 +9,7 @@ except ImportError:
   print 'Error importing python-Xlib, X clipboard integration will be unavailable'
   defSelections = None
 
-from select import select
+import select
 
 class XlibNotFound(Exception): pass
 class XFailConnection(Exception): pass
@@ -169,8 +169,14 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
       skip = False
       while 1:
         if skip and awaitingCompletion == []: break
-        (readable, ign, ign) = select(select_fds, [], [], timeout)
-        
+        while True:
+          try:
+            (readable, ign, ign) = select.select(select_fds, [], [], timeout)
+          except select.error,e:
+            if e.args[0] == 4: continue # Interrupted system call
+            raise
+          break
+
         if not readable and awaitingCompletion == []:
           break
 
