@@ -6,15 +6,63 @@ import fcntl
 import Crypto.Hash.SHA
 import Crypto.Hash.SHA256
 import Crypto.Cipher.AES
-import Crypto.Util.strxor
+#FIXME: strxor not in crypto lib on n900
+try:
+  import Crypto.Util.strxor as strxor
+except ImportError:
+  def strxor(str1, str2):
+    if len(str1) != len(str2):
+      raise AttributeError('string lengths do not match')
+    return ''.join(map(lambda (x,y): chr(ord(y) ^ ord(x)), zip(str1,str2))) 
 import base64
 import threading
 import weakref
-import json
+# json not on n900
+try:
+  import json
+except ImportError:
+  import simplejson as json
 
-def randBits(size):
+try:
   import Crypto.Random
-  return Crypto.Random.get_random_bytes(size/8)
+  def randBits(size):
+    return Crypto.Random.get_random_bytes(size/8)
+except ImportError:
+  def randSeq(length):
+    """
+    Return a stream of random bits of arbitrary length.
+    NOTE: I have not confirmed python's PRNG cryptographic strength and in any
+    case it must be seeded securely first
+    """
+    import random
+    def _randInit():
+      random.seed() # With time or OS specific source.
+      randSeq.initialised = True
+    def _rand53():
+      return int(random.uniform(0,2**53))
+  
+    if not hasattr(randSeq, 'initialised'):
+      _randInit()
+  
+    seq = 0
+    for i in range(length/53):
+      r = _rand53()
+      seq = seq | r << i*53
+    mask = (1<<(length % 53))-1
+    r = _rand53() & mask
+    seq |= r << 53 * (length/53)
+    return seq
+  def randBits(size): #@FIXME: endianess of partial bytes, and make this more optimal for returning strings
+    r = randSeq(size)
+    ret = []
+    for i in range((size+7)//8):
+      ret.append(r >> i*8 & 0xff)
+    return ''.join(map(chr, ret))
+
+  if __name__ == '__main__':
+    r = randBits(256)
+    print repr(r)
+    print len(r)
 
 def extendstr(data, length):
   return (data*(length/len(data)+1))[:length]
@@ -84,7 +132,6 @@ class _masterKey(object):
     Take a chunk of data and encrypt it using this key.
     Raises KeyExpired if this key has timed out.
     """
-    import Crypto.Util.strxor
     def pad(data, multiple):
       assert(multiple < 256)
       padding = multiple - ((len(data) + 1) % multiple)
@@ -92,7 +139,7 @@ class _masterKey(object):
     checksum = Crypto.Hash.SHA.new(data).digest()
     a = Crypto.Cipher.AES.new(self._key)
     s = randBits(256)
-    data = Crypto.Util.strxor.strxor(data,extendstr(s, len(data)))
+    data = strxor(data,extendstr(s, len(data)))
     e = a.encrypt(pad(data + s + checksum, Crypto.Cipher.AES.block_size))
     return base64.encodestring(e).replace('\n','')
 
@@ -112,7 +159,7 @@ class _masterKey(object):
     decrypted = deciphered[:-Crypto.Hash.SHA.digest_size-32]
     salt      = deciphered[-Crypto.Hash.SHA.digest_size-32:-Crypto.Hash.SHA.digest_size]
     checksum  = deciphered[-Crypto.Hash.SHA.digest_size:]
-    decrypted = Crypto.Util.strxor.strxor(decrypted,extendstr(salt, len(decrypted)))
+    decrypted = strxor(decrypted,extendstr(salt, len(decrypted)))
     if checksum != Crypto.Hash.SHA.new(decrypted).digest():
       raise ChecksumFailure()
     return decrypted
@@ -121,7 +168,7 @@ class _masterKey(object):
   def _encMasterKey(key, passphrase):
     h = Crypto.Hash.SHA256.new(passphrase).digest()
     s = randBits(256)
-    k = Crypto.Util.strxor.strxor(h,s)
+    k = strxor(h,s)
     a = Crypto.Cipher.AES.new(k)
     checksum = Crypto.Hash.SHA256.new(key).digest()
     e = a.encrypt(key + checksum)
@@ -133,7 +180,7 @@ class _masterKey(object):
     h = Crypto.Hash.SHA256.new(passphrase).digest()
     e = d[:-256/8]
     s = d[-256/8:]
-    k = Crypto.Util.strxor.strxor(h,s)
+    k = strxor(h,s)
     a = Crypto.Cipher.AES.new(k)
     deciphered = a.decrypt(e)
     key      = deciphered[:-Crypto.Hash.SHA256.digest_size]
@@ -300,10 +347,12 @@ class KoshDB(dict):
     dirname = os.path.expanduser(os.path.dirname(filename))
     if not os.path.exists(dirname):
       os.makedirs(dirname, mode=0700)
-    with NamedTemporaryFile(mode='wb', delete=False,
+    fp = NamedTemporaryFile(mode='wb',
         prefix=os.path.basename(filename),
-        dir=dirname) as fp:
-
+        dir=dirname)
+    # python2.5 does not have delete parameter:
+    fp.unlink = lambda *args: None
+    try:
       fp.write(KoshDB.FILE_HEADER)
 
       for line in self._lines:
@@ -331,6 +380,8 @@ class KoshDB(dict):
 
       if bug:
         raise Bug("Refer to %s for details" % filename)
+    finally:
+      fp.close()
 
   def _open(self, filename, prompt):
     self.fp = open(filename, 'rb')

@@ -189,6 +189,17 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
   sys.stdout = StringIO.StringIO()
   try:
     display = Xlib.display.Display()
+  except Xerror.XauthError:
+    # On e.g. n900 there is no ~/.XAuthority, replace the load function
+    # with a stub and try again:
+    #import Xlib.xauth
+    def tmp(self):
+      self.entries = []
+    Xlib.xauth.Xauthority.__init__ = tmp
+    try:
+      display = Xlib.display.Display()
+    except Xerror.DisplayError:
+      raise XFailConnection()
   except Xerror.DisplayError:
     raise XFailConnection()
   finally:

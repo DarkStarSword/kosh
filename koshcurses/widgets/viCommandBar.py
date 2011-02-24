@@ -95,7 +95,7 @@ class viCommandBar(urwid.WidgetWrap):
     km = self.KEYMAP[self._mode]
     if key in km:
       f = getattr(self, km[key])
-      if f.__code__.co_argcount == 3:
+      if f.func_code.co_argcount == 3:
         return f(size, key)
       return f()
 
