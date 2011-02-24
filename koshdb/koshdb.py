@@ -28,36 +28,42 @@ try:
   def randBits(size):
     return Crypto.Random.get_random_bytes(size/8)
 except ImportError:
-  def randSeq(length):
+  def randBits(size):
     """
     Return a stream of random bits of arbitrary length.
     NOTE: I have not confirmed python's PRNG cryptographic strength and in any
     case it must be seeded securely first
+
+    FIXME: My bigger concern is that we may not be using a high entropy source
+    - if python uses /dev/[u]random it should be fine, but on platforms where
+    it falls back to the current time my concern is that an attacker who can
+    observe the timestamps on the database may be able to guess the random
+    data produced, giving them a great deal of data they need to crack the
+    database.
     """
     import random
     def _randInit():
       random.seed() # With time or OS specific source.
-      randSeq.initialised = True
-    def _rand53():
-      return int(random.uniform(0,2**53))
+      randBits.initialised = True
+    def _rand():
+      # Determined that random.uniform is good for 53 bits of random data)
+      return (53, int(random.uniform(0,2**53)))
   
-    if not hasattr(randSeq, 'initialised'):
+    if not hasattr(randBits, 'initialised'):
       _randInit()
   
-    seq = 0
-    for i in range(length/53):
-      r = _rand53()
-      seq = seq | r << i*53
-    mask = (1<<(length % 53))-1
-    r = _rand53() & mask
-    seq |= r << 53 * (length/53)
-    return seq
-  def randBits(size): #@FIXME: endianess of partial bytes, and make this more optimal for returning strings
-    r = randSeq(size)
-    ret = []
+    seq = []
+    bits = 0
+    randbits = 0
     for i in range((size+7)//8):
-      ret.append(r >> i*8 & 0xff)
-    return ''.join(map(chr, ret))
+      if bits < 8:
+        (bits, randbits) = _rand()
+      bits -= 8
+      seq.append((randbits >> bits) & 0xff)
+      shift = size - i*8
+      if (shift < 8):
+        seq[i] = (seq[i] << shift) & 0xff
+    return ''.join(map(chr, seq))
 
   if __name__ == '__main__':
     r = randBits(256)
