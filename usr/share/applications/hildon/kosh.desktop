@@ -1,0 +1,10 @@
+[Desktop Entry]
+Encoding=UTF-8
+Version=0.01
+Type=Application
+Name=kosh
+Exec=osso-xterm /home/user/kosh/kosh
+Icon=kosh
+X-Window-Icon=kosh
+X-Window-Icon-Dimmed=koh
+Terminal=true
