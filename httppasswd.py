@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.6
+#!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
 # URLs will be a difficult case...
@@ -26,8 +26,19 @@
 
 import urllib2
 
-def get_next_action_ask():
-  pass
+def print_actions(state):
+  print """-------------
+Enter action:
+  g <url>: goto url
+>""",
+
+def get_next_action_ask(state):
+  while True:
+    input=''
+    while not input:
+      print_actions(state)
+      input = raw_input()
+    yield input
 
 def get_next_action_scripted(script):
   # Intended to be used as a generator to return the actions in the script
@@ -47,11 +58,12 @@ class urlvcr(object):
 
 def main():
   script = []
-  state = object()
+  state = urlvcr()
   # If replaying a script, use get_next_action_scripted
-  get_next_action = get_next_action_ask()
+  get_next_action = get_next_action_ask(state)
   while True:
-    action = get_next_action(state)
+    action = get_next_action.next()
+    script.append(action)
     print action
 
 
