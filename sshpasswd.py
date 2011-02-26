@@ -95,6 +95,11 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
     ui._cprint('yellow', "Changing local password")
     tty = pexpect.spawn('passwd')
     mustclose = True
+    import sys
+    log = filteringIOProxy(sys.stdout, [(oldpass, ui._ctext('dark blue', '<OLD_PASS>')),(newpass, ui._ctext('dark blue', '<NEW_PASS>'))])
+    # TODO: Want both logging to the same StringIO, but _send passing through the filtering proxy
+    tty.logfile_read = sys.stdout
+    tty.logfile_send = log
   else:
     tty.sendline('')
     tty.prompt()
@@ -133,6 +138,8 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
           failure_prompts: state('Confirming new password appears to have failed?'),
           reprompted: _PasswordChangeReprompted('Asked for new password again after confirming password - perhaps new password does not conform to system password policy? Log may contain additional detail.'),
         })
+
+    return True
 
   except _PasswordChangeReprompted, e:
     mustclose = True
@@ -289,7 +296,7 @@ def change_ssh_passwd(ui, host, username, oldpass, newpass):
   ui._cprint('yellow', 'Verifying password change on %s...'%host)
   ui._cprint('dark yellow', 'trying new password...')
   if verify_ssh_passwd(ui, host, username, newpass):
-    ui._cprint('green', ' Success')
+    return True
   else:
     ui._cprint('red', ' Failure')
     ui._cprint('dark yellow', 'Trying old password...')
@@ -447,7 +454,7 @@ def main(ui):
   oldpass = newpass = newpass1 = ''
   while oldpass == '':
     oldpass = getpass.getpass('old password: ')
-  if protos.intersection(['ssh','conf']):
+  if protos.intersection(['ssh','conf','localhost']):
     while newpass == '' or newpass != newpass1:
       newpass = getpass.getpass('new password: ')
       newpass1 = getpass.getpass('Confirm new password: ')
@@ -475,7 +482,8 @@ def main(ui):
     if proto == 'ssh':
       try:
         ui._cprint('yellow', 'Changing password on %s for user %s...'%(host, username))
-        change_ssh_passwd(ui, host, username, oldpass, newpass)
+        if change_ssh_passwd(ui, host, username, oldpass, newpass):
+          ui._cprint('green', 'Success')
       except _PasswordChangeException, e:
         ui._cprint('red', 'Password change failed on %s: %s'%(host,e))
       except Exception, e:
@@ -485,9 +493,14 @@ def main(ui):
 
     if proto == 'localhost':
       try:
-        change_tty_passwd(ui, oldpass, newpass)
-      except:
-        ui._cprint('red', 'Local password change failed!')
+        if change_tty_passwd(ui, oldpass, newpass):
+          ui._cprint('green', 'Success')
+      except _PasswordChangeException, e:
+        ui._cprint('red', 'Local password change failed: %s'%e)
+      except Exception, e:
+        import traceback
+        ui._cprint('dark red', traceback.format_exc())
+        ui._cprint('red', 'Local password change failed: %s'%e)
 
     if proto == 'conf':
       try:
