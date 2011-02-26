@@ -3,9 +3,11 @@
 
 import pexpect
 
-class PasswordChangeFailure(Exception): pass         # Password was NOT changed
-class PasswordChangePossibleFailure(Exception): pass # Cannot determine if the password change was successful
-class PasswordChangeVerifyFailure(Exception): pass   # Password changed, but verification failed
+class _PasswordChangeException(Exception): pass                     # Base class for exceptions
+class PasswordChangeFailure(_PasswordChangeException): pass         # Password was NOT changed
+class PasswordChangePossibleFailure(_PasswordChangeException): pass # Cannot determine if the password change was successful
+class PasswordChangeVerifyFailure(_PasswordChangeException): pass   # Password changed, but verification failed
+class _PasswordChangeReprompted(_PasswordChangeException): pass     # Used for internal state tracking only
 
 class hashable_list(list):
   def __hash__(self):
@@ -117,18 +119,25 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
     tty.sendline(newpass)
 
     result = expect_groups_exception(ui, tty, [confirm_pass_prompts],
-        {failure_prompts: state('Problem with new password')})
+        {
+          failure_prompts: state('Problem with new password'),
+          new_pass_prompts: _PasswordChangeReprompted('Asked for new password again instead of expected request for confirmation. Log may contain additional detail.'),
+        })
 
     #ui._cprint('yellow','Re-sending new password...')
     tty.sendline(newpass)
 
-    reprompted = new_pass_prompts + confirm_pass_prompts
-    result = expect_groups_exception(ui, tty, [success_prompts, reprompted],
-        {failure_prompts: state('Confirming new password appears to have failed?')})
-    if result == reprompted:
-      tty.close()
-      raise state('Asked for new password again after confirming password')
+    reprompted = hashable_list(new_pass_prompts + confirm_pass_prompts)
+    result = expect_groups_exception(ui, tty, [success_prompts],
+        {
+          failure_prompts: state('Confirming new password appears to have failed?'),
+          reprompted: _PasswordChangeReprompted('Asked for new password again after confirming password - perhaps new password does not conform to system password policy? Log may contain additional detail.'),
+        })
 
+  except _PasswordChangeReprompted, e:
+    mustclose = True
+    ui._cprint('red','Got prompt for new password again')
+    raise state(str(e))
   except PasswordChangeFailure, e:
     ui._cprint('red', str(e))
     #print log
@@ -136,11 +145,11 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
   except pexpect.TIMEOUT:
     ui._cprint('red', 'timeout')
     #print log
-    raise state()
+    raise state('TIMEOUT')
   except pexpect.EOF:
     ui._cprint('red', 'Unexpected end of output')
     #print log
-    raise state()
+    raise state('Unexpected EOF')
   finally:
     if mustclose:
       tty.close(True)
@@ -213,6 +222,10 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
   log = filteringIOProxy(sys.stdout, filter)
   pxssh.pxssh.synch_original_prompt = replace_synch_original_prompt
   s = pxssh.pxssh()
+  # pxssh obviousely has never dealt with zsh and it's attempt to make the
+  # prompt more unique will put a \ in the prompt that it doesn't expect, this
+  # regexp optionally matches that \:
+  s.PROMPT = "\[PEXPECT\]\\\\?[\$\#] "
   # TODO: Want both logging to the same StringIO, but _send passing through the filtering proxy
   s.logfile_read = sys.stdout
   s.logfile_send = log
@@ -251,34 +264,45 @@ def change_ssh_passwd(ui, host, username, oldpass, newpass):
 
   ui._cprint('yellow', 'Changing password...')
   # Change:
+  verifyException = None
   try:
     change_tty_passwd(ui, oldpass, newpass, s)
-  except Exception, e:
-    import traceback
-    ui._cprint('dark red', traceback.format_exc())
-    ui._cprint('red', 'Exception while attempting to change password: %s'%e)
-
-  # Logout:
-  try:
-    if not s.closed:
-      s.logout()
-  except: pass
-  try:
-    s.close(True)
-  except: pass
+  except PasswordChangeFailure:
+    # No need to verity, at this phase of the process it should not be possible to have inadvertently changed the password
+    raise
+  except PasswordChangePossibleFailure, e:
+    # If we got this far it is possible we may have changed the password, so we
+    # need to verify. If verification fails we want to re-raise this exception,
+    # not VerifyFailure:
+    verifyException = e
+  finally:
+    # Logout, ignore exceptions:
+    try:
+      if not s.closed:
+        s.logout()
+    except: pass
+    try:
+      s.close(True)
+    except: pass
 
   # Verify:
-  ui._cprint('dark green', 'Verifying change on %s...'%host)
+  ui._cprint('yellow', 'Verifying password change on %s...'%host)
+  ui._cprint('dark yellow', 'trying new password...')
   if verify_ssh_passwd(ui, host, username, newpass):
     ui._cprint('green', ' Success')
   else:
     ui._cprint('red', ' Failure')
-    ui._cprint('yellow', 'Testing old password...')
+    ui._cprint('dark yellow', 'Trying old password...')
     if verify_ssh_passwd(ui, host, username, oldpass):
       ui._cprint('yellow', ' Password unchanged!')
-      raise PasswordChangeFailure()
+      if verifyException is not None:
+        # If we possibly failed earlier, that exception will have more detail than we know now, so raise it:
+        raise verifyException
+      raise PasswordChangeFailure('Failed to verify password change, but old password still works')
     else:
       ui._cprint('red', ' Verification Failed!')
+      if verifyException is not None:
+        raise verifyException
       raise PasswordChangeVerifyFailure()
 
 # Proposed API:
@@ -438,18 +462,22 @@ def main(ui):
         if verify_ssh_passwd(ui, host, username, oldpass):
           ui._cprint('green', 'Ok')
         else:
-          ui._cprint('red', 'not Ok')
+          ui._cprint('red', 'Failed!')
       except pexpect.TIMEOUT, e:
         ui._cprint('red', 'timeout')
-      except:
+      except _PasswordChangeException, e:
+        ui._cprint('red', 'Exception verifying password on %s:'%(host, e))
+      except Exception, e:
         import traceback
         ui._cprint('dark red', traceback.format_exc())
-        ui._cprint('red', 'Exception verifying password on %s'%host)
+        ui._cprint('red', 'Exception verifying password on %s:'%(host, e))
 
     if proto == 'ssh':
       try:
-        ui._cprint('yellow', 'Changing password on %s...'%host)
+        ui._cprint('yellow', 'Changing password on %s for user %s...'%(host, username))
         change_ssh_passwd(ui, host, username, oldpass, newpass)
+      except _PasswordChangeException, e:
+        ui._cprint('red', 'Password change failed on %s: %s'%(host,e))
       except Exception, e:
         import traceback
         ui._cprint('dark red', traceback.format_exc())
