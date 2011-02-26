@@ -61,7 +61,8 @@ class ui_tty(object):
   def status(self, msg):
     ui_tty._print(msg)
 
-  def confirm(self, prompt, default=None):
+  @staticmethod
+  def confirm(prompt, default=None):
     ret = ''
     prompt = prompt + ' ' + {
         True:  '(Y,n)',
@@ -69,8 +70,8 @@ class ui_tty(object):
         None:  '(y,n)',
         }[default] + ': '
     while ret not in ['y', 'n']:
-      ret = self.read_nonbuffered(prompt).lower()
-      if default is not None and ret == '':
+      ret = ui_tty.read_nonbuffered(prompt).lower()
+      if default is not None and ret in ['', '\n']:
         return default
     return ret == 'y'
 
@@ -100,6 +101,6 @@ class ui_tty(object):
   @staticmethod
   def _cconfirm(colour, prompt, default=None):
     try:
-      return confirm(ui_tty._ctext(colour, prompt), default=default)
+      return ui_tty.confirm(ui_tty._ctext(colour, prompt), default=default)
     except KeyError:
       raise

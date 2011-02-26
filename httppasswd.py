@@ -25,9 +25,13 @@
 #  Submit form
 
 import urllib2
+import urlparse
+import HTMLParser
 
 TIMEOUT=10 # FIXME: Configurable
 DEBUG=True
+
+class _CancelAction(Exception): pass
 
 class urlvcr_action(object):
   def valid(self, state):
@@ -60,16 +64,15 @@ class action_goto(urlvcr_action):
     return "Goto URL"
   def ask_params(self, ui, state):
     while True:
-      url = ''
-      while url == '':
-        url = raw_input('Enter URL: ')
+      url = raw_input('Enter URL: ')
+      if url == '':
+        raise _CancelAction()
       if url.find('://') != -1:
         break
       if ui.read_nonbuffered("No protocol specified - assume http? (Y,n) "):
         url = 'http://'+url
         break
     return url
-
   def apply(self, ui, state, url):
     state.request(ui, url)
 
@@ -113,6 +116,71 @@ class action_back(urlvcr_action):
       node = node.parent
     return node
 
+class action_link(urlvcr_action, HTMLParser.HTMLParser):
+  def valid(self, state):
+    return state.state is not None
+  def help(self, state):
+    return "Follow link on current page"
+  def ask_params(self, ui, state):
+    self.update(ui, state)
+    links = self.links
+    while True:
+      ui._print('\n'.join([ "%s\n\t-> %s"%(l.data if l.data else '<NO TEXT LINK>', l['href'] if 'href' in l else '<NO URL>') for l in links]).encode('latin-1')) #FIXME: Damn unicode
+      filter = raw_input("Enter part of the link to follow: ").lower()
+      if not filter:
+        raise _CancelAction()
+      links = [l for l in links if filter in l.data.lower()]
+      if len(links) == 1:
+        link = links.pop()
+        try:
+          url = link['href']
+        except KeyError:
+          ui._cprint("red", 'No HREF attribute in link')
+        else:
+          url = urlparse.urljoin(state.url, url)
+          if ui._cconfirm('blue', 'Follow link "%s" to %s'%(link.data,ui._ctext('dark blue', url)), True):
+            return link.data
+      if not len(links):
+        links = self.links
+  def apply(self, ui, state, link):
+    self.update(ui, state)
+    links = [l for l in self.links if link in l.data]
+    if len(links) != 1:
+      raise ReplayFailure('%i links matching "%s"'%(len(links), link))
+    url = urlparse.urljoin(state.url, links[0]['href'])
+    state.request(ui, url)
+
+  class Link(dict):
+    data = ''
+
+  def update(self, ui, state):
+    if not hasattr(self,'state') or self.state != state.state:
+      self.reset()
+      self._ui = ui
+      self.feed(state.body)
+      self.state = state.state
+  def reset(self):
+    self.links = []
+    self.dom = []
+    HTMLParser.HTMLParser.reset(self)
+  def handle_starttag(self, tag, attrs):
+    if tag == 'a':
+      self.dom.append(self.Link(attrs))
+      #self._ui._cprint('blue', '%i: <a href="%%s">, attrs:%s'%(self.in_links,repr(dict(attrs))))
+    # FIXME: Catch images (alttext, url) or other objects that could identify a link
+  def handle_endtag(self, tag):
+    if tag == 'a':
+      if not len(self.dom):
+        #self._ui._cprint('yellow', '</a INVALID>')
+        return
+      link = self.dom.pop()
+      link.data = ' '.join(link.data.split()).decode('latin-1') #Normalise whitespace #FIXME: Damn unicode
+      self.links.append(link)
+      #self._ui._cprint('blue', '%i: </a>'%self.in_links)
+  def handle_data(self, data):
+    if len(self.dom):
+      #self._ui._cprint('dark blue', data)
+      self.dom[-1].data += data
 
 class urlvcr_actions(dict):
   def display_valid_actions(self, ui, state):
@@ -131,7 +199,10 @@ class urlvcr_actions(dict):
       if action not in self or not self[action].valid(state):
         ui._print("%s: Invalid action from current state\n"%repr(action))
         continue
-      params = self[action].ask_params(ui, state)
+      try:
+        params = self[action].ask_params(ui, state)
+      except _CancelAction:
+        continue
       return (action, params)
 
 # ABI WARNING: Do not reassign letters without bumping db version & implementing conversion - these are saved in the scripts
@@ -141,6 +212,7 @@ actions = urlvcr_actions({
   'q': action_quit(),
   'u': action_undo(),
   'b': action_back(),
+  'f': action_link(), # Might want hjkl to scroll...
 })
 
 def get_actions_ask(ui, state):
@@ -206,7 +278,7 @@ class urlvcr(object):
       if hasattr(e, 'reason'):
         ui._cprint('red', 'Failed to reach server: %s'%e.reason)
       elif hasattr(e, 'code'):
-        ui._cprint('ref', 'HTTP status code: %s'%e.code)
+        ui._cprint('red', 'HTTP status code: %s'%e.code)
       raise
     self.state.url = response.geturl()
     self.state.info = response.info()
