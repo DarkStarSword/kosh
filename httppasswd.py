@@ -26,19 +26,55 @@
 
 import urllib2
 
-def print_actions(state):
-  print """-------------
-Enter action:
-  g <url>: goto url
->""",
+def get_next_char(prompt):
+  import sys, tty
+  stdin = sys.stdin.fileno()
+  if prompt:
+    print prompt,
+  old = tty.tcgetattr(stdin)
+  try:
+    tty.setcbreak(stdin)
+    ch = sys.stdin.read(1)
+  finally:
+    tty.tcsetattr(stdin, tty.TCSADRAIN, old)
+  print "\x08%s"%ch
+  return ch
 
-def get_next_action_ask(state):
-  while True:
-    input=''
-    while not input:
-      print_actions(state)
-      input = raw_input()
-    yield input
+class urlvcr_action(object):
+  def valid(self, state):
+    raise NotImplementedError()
+  def help(self, state):
+    return "Missing help text"
+
+class action_goto(urlvcr_action):
+  def valid(self, state):
+    return True
+  def help(self, state):
+    return "Goto URL"
+
+class urlvcr_actions(object):
+  def __init__(self, actions):
+    self.actions = actions
+
+  def display_valid_actions(self, state):
+    for action in self.actions:
+      if self.actions[action].valid(state):
+        print "  %s: %s"%(action, self.actions[action].help(state))
+
+  def ask_next_action(self, state):
+    import sys
+    while True:
+      action=''
+      while action not in self.actions:
+        print "-------------\nEnter action:"
+        actions.display_valid_actions(state)
+        action = get_next_char("> ").lower()
+      yield action
+
+
+actions = urlvcr_actions({
+  'g': action_goto(),
+})
 
 def get_next_action_scripted(script):
   # Intended to be used as a generator to return the actions in the script
@@ -60,7 +96,7 @@ def main():
   script = []
   state = urlvcr()
   # If replaying a script, use get_next_action_scripted
-  get_next_action = get_next_action_ask(state)
+  get_next_action = actions.ask_next_action(state)
   while True:
     action = get_next_action.next()
     script.append(action)
