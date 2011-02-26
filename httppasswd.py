@@ -26,6 +26,7 @@
 
 import urllib2
 
+# FIXME: Move into tty ui class
 def get_next_char(prompt):
   import sys, tty
   stdin = sys.stdin.fileno()
@@ -45,12 +46,19 @@ class urlvcr_action(object):
     raise NotImplementedError()
   def help(self, state):
     return "Missing help text"
+  def ask_params(self, state):
+    return None
 
 class action_goto(urlvcr_action):
   def valid(self, state):
     return True
   def help(self, state):
     return "Goto URL"
+  def ask_params(self, state):
+    url = raw_input('Enter URL')
+    if not url.find('://'):
+      if get_next_char("No protocol specified - assume http? (Y,n)"):
+      url = 'http://'+url
 
 class urlvcr_actions(object):
   def __init__(self, actions):
@@ -63,20 +71,27 @@ class urlvcr_actions(object):
 
   def ask_next_action(self, state):
     import sys
+    action=''
+    print "-------------"
     while True:
-      action=''
-      while action not in self.actions:
-        print "-------------\nEnter action:"
-        actions.display_valid_actions(state)
-        action = get_next_char("> ").lower()
-      yield action
-
+      print "Enter action:"
+      actions.display_valid_actions(state)
+      action = get_next_char("> ").lower()
+      if action not in self.actions:
+        print "%s: Invalid action\n"%repr(action)
+        continue
+      params = self.actions[action].ask_params(state)
+      return (action, params)
 
 actions = urlvcr_actions({
   'g': action_goto(),
 })
 
-def get_next_action_scripted(script):
+def get_actions_ask(state):
+  while True:
+    yield actions.ask_next_action(state)
+
+def get_actions_from_script(state, script):
   # Intended to be used as a generator to return the actions in the script
   pass
 
@@ -95,8 +110,8 @@ class urlvcr(object):
 def main():
   script = []
   state = urlvcr()
-  # If replaying a script, use get_next_action_scripted
-  get_next_action = actions.ask_next_action(state)
+  # If replaying a script, use get_actions_from_script
+  get_next_action = get_actions_ask(state)
   while True:
     action = get_next_action.next()
     script.append(action)
