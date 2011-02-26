@@ -3,35 +3,47 @@
 
 import pexpect
 
-old_pass_prompts = [
+class PasswordChangeFailure(Exception): pass         # Password was NOT changed
+class PasswordChangePossibleFailure(Exception): pass # Cannot determine if the password change was successful
+class PasswordChangeVerifyFailure(Exception): pass   # Password changed, but verification failed
+
+class hashable_list(list):
+  def __hash__(self):
+    h=''
+    for (i,x) in enumerate(self):
+      h += '%i: %s,'%(i,repr(x))
+    return hash(h)
+
+old_pass_prompts = hashable_list([
     'current.*password: ',
     'Old Password: ',
     'Enter login\(LDAP\) password: ',
     '\(current\) UNIX password: ',
-    ]
+    ])
 
-new_pass_prompts = [
+new_pass_prompts = hashable_list([
     'Enter new password: ',
     'New Password: ',
     'Enter new UNIX password: ',
-    ]
+    ])
 
-confirm_pass_prompts = [
+confirm_pass_prompts = hashable_list([
     'Re-type new password: ',
     'Retype new UNIX password: ',
     'Re-enter new password: ',
     'Reenter New Password: ',
-    ]
+    ])
 
 # TODO: Find more failure prompts
-failure_prompts = [
+failure_prompts = hashable_list([
     'password unchanged',
-    ]
+    # 'You must choose a longer password', - prefer to detect re-prompting
+    ])
 
-success_prompts = [
+success_prompts = hashable_list([
     'Password changed.',
     'passwd: password updated successfully',
-    ]
+    ])
 
 def flatten1(l):
   """
@@ -41,19 +53,20 @@ def flatten1(l):
   """
   return reduce(lambda a,b:a+b, l)
 
-def expect_groups(self, groups):
-  flatten = flatten1(groups)
+def expect_groups(ui, self, groups):
+  flatten = list(flatten1(groups))
+  #ui._cprint("dark blue", "%s.expect(%s)"%(repr(self),repr(flatten)))
   ret = self.expect(flatten)
   newgroups = flatten1([[g]*len(g) for g in groups])
   return newgroups[ret]
 
-def expect_groups_exception(self, groups, exceptiongroups):
+def expect_groups_exception(ui, self, groups, exceptiongroups):
   """
   Like expect_groups, but if an entry in exceptiongroups is matched, this will
   raise the corresponding exception instead.
   exceptiongroups is a dict mapping expressions to exceptions
   """
-  ret = expect_groups(self, groups + exceptiongroups.keys())
+  ret = expect_groups(ui, self, groups + exceptiongroups.keys())
   if ret in groups:
     return ret
   raise exceptiongroups[ret]
@@ -67,7 +80,7 @@ def test_expect_groups(ui):
       prompt = reduce(lambda x,(a,b): x.replace(a,b), [('\(','('),('\)',')')], prompt)
       ui._print("testing response to '%s': "%prompt,end='')
       self = pexpect.spawn("echo '%s'"%prompt)
-      ret = expect_groups(self, groups)
+      ret = expect_groups(ui, self, groups)
       self.close()
       if ret != g:
         ui._print("\nfail:'\nMatched %s\nnot     %s\n"%(e,str(ret),str(g)))
@@ -75,39 +88,46 @@ def test_expect_groups(ui):
         ui._print('ok')
 
 def change_tty_passwd(ui, oldpass, newpass, tty=None):
+  mustclose = False
   if tty is None:
     ui._cprint('yellow', "Changing local password")
     tty = pexpect.spawn('passwd')
+    mustclose = True
   else:
+    tty.sendline('')
     tty.prompt()
     tty.sendline('passwd')
 
   state = PasswordChangeFailure
 
   try:
-    # FIXME: root user will not be prompted for current password
-    ui._print('waiting for current password prompt...')
-    result = expect_groups(tty, [old_pass_groups])
+    ui._cprint('dark yellow', 'waiting for current password prompt...')
+    result = expect_groups(ui, tty, [old_pass_prompts, new_pass_prompts])
 
-    ui._cprint('yellow','sending old password...')
-    tty.sendline(oldpass)
+    if result == old_pass_prompts: # root is not prompted for an old password
+      #ui._cprint('yellow','sending old password...')
+      tty.sendline(oldpass)
 
-    result = expect_groups_exception(tty, [new_pass_prompts],
-        {failure_prompts: state('Bad old password!')})
+      result = expect_groups_exception(ui, tty, [new_pass_prompts],
+          {failure_prompts: state('Bad old password!')})
 
-    state = PasswordChangeFailure # FIXME: From here on it is possible that the change succeeds
+    state = PasswordChangePossibleFailure
 
-    ui._cprint('yellow','sending new password...')
+    #ui._cprint('yellow','sending new password...')
     tty.sendline(newpass)
 
-    result = expect_groups_exception(tty, [confirm_pass_prompts],
+    result = expect_groups_exception(ui, tty, [confirm_pass_prompts],
         {failure_prompts: state('Problem with new password')})
 
-    ui._cprint('yellow','Re-sending new password...')
+    #ui._cprint('yellow','Re-sending new password...')
     tty.sendline(newpass)
 
-    result = expect_groups_exception(tty, [success_prompts],
+    reprompted = new_pass_prompts + confirm_pass_prompts
+    result = expect_groups_exception(ui, tty, [success_prompts, reprompted],
         {failure_prompts: state('Confirming new password appears to have failed?')})
+    if result == reprompted:
+      tty.close()
+      raise state('Asked for new password again after confirming password')
 
   except PasswordChangeFailure, e:
     ui._cprint('red', str(e))
@@ -122,7 +142,8 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
     #print log
     raise state()
   finally:
-    tty.close(True)
+    if mustclose:
+      tty.close(True)
 
 class LoginFailure(Exception): pass
 
@@ -155,12 +176,46 @@ def replace_synch_original_prompt (self):
       return True
   return False
 
-def ssh_open(ui, host, username, password = '', force_password = True):
+class filteringIOProxy(object):
+  def __init__(self, fp, filters):
+    self.fp = fp
+    self._buf = ''
+    self.filters = filters
+
+  def write(self, str):
+    self._buf += str
+    lines = self._buf.split('\n')
+    self._buf = lines[-1:][0]
+    for line in lines[:-1]:
+      self.fp.write(self.filter(line) + '\n')
+
+  def flush(self):
+    self.fp.write(self.filter(self._buf))
+    self._buf = ''
+    self.fp.flush()
+
+  def filter(self, str):
+    return reduce(lambda s,(rep,wit): s.replace(rep, wit), self.filters, str)
+
+  def __getattribute__(self,name):
+    try:
+      return object.__getattribute__(self, name)
+    except AttributeError:
+      return object.__getattribute__(self, 'fp').__getattribute__(name)
+
+def ssh_open(ui, host, username, password = '', force_password = True, filter=None):
   import pxssh
-  import StringIO
-  log = StringIO.StringIO() # or just sys.stdout?
+  #import StringIO
+  #log = StringIO.StringIO()
+  import sys
+  if filter is None:
+    filter = [(password, ui._ctext('dark blue', '<PASSWORD>'))]
+  log = filteringIOProxy(sys.stdout, filter)
   pxssh.pxssh.synch_original_prompt = replace_synch_original_prompt
-  s = pxssh.pxssh(logfile=log)
+  s = pxssh.pxssh()
+  # TODO: Want both logging to the same StringIO, but _send passing through the filtering proxy
+  s.logfile_read = sys.stdout
+  s.logfile_send = log
   s.force_password = force_password
   try:
     s.login(host, username, password)
@@ -170,12 +225,9 @@ def ssh_open(ui, host, username, password = '', force_password = True):
     raise LoginFailure('EOF: Check the hostname')
   except pexpect.TIMEOUT, e:
     raise
-  finally:
-    ui._print(log.getvalue().replace(password, '<OLD PASS>'))
+  #finally:
+    # print log
   return s
-
-class PasswordChangeFailure(Exception): pass         # Password was NOT changed
-class PasswordChangeVerifyFailure(Exception): pass   # Password changed, but verification failed
 
 def verify_ssh_passwd(ui, host, username, password):
   try:
@@ -189,32 +241,39 @@ def verify_ssh_passwd(ui, host, username, password):
 
 def change_ssh_passwd(ui, host, username, oldpass, newpass):
   # Login:
-  ui._print('Logging in to %s...'%host, end='')
+  ui._cprint('dark yellow', 'Logging in to %s...'%host)
   try:
-    s = ssh_open(ui, host, username, oldpass)
+    s = ssh_open(ui, host, username, oldpass, filter=[(oldpass, ui._ctext('dark blue', '<OLD_PASS>')),(newpass, ui._ctext('dark blue', '<NEW_PASS>'))])
     ui._cprint('green', 'Ok')
   except LoginFailure, e:
     ui._cprint('red', 'failure: %s'%str(e))
     raise PasswordChangeFailure(str(e))
 
-  ui._print('Changing password...', end='')
+  ui._cprint('yellow', 'Changing password...')
   # Change:
   try:
     change_tty_passwd(ui, oldpass, newpass, s)
-  except:
-    ui._cprint('red', 'Exception while attempting to change password')
+  except Exception, e:
+    import traceback
+    ui._cprint('dark red', traceback.format_exc())
+    ui._cprint('red', 'Exception while attempting to change password: %s'%e)
 
   # Logout:
-  s.logout()
-  s.close(True)
+  try:
+    if not s.closed:
+      s.logout()
+  except: pass
+  try:
+    s.close(True)
+  except: pass
 
   # Verify:
-  ui._print('Verifying change on %s...'%host, end='')
+  ui._cprint('dark green', 'Verifying change on %s...'%host)
   if verify_ssh_passwd(ui, host, username, newpass):
     ui._cprint('green', ' Success')
   else:
     ui._cprint('red', ' Failure')
-    ui._print('Testing old password...', end='')
+    ui._cprint('yellow', 'Testing old password...')
     if verify_ssh_passwd(ui, host, username, oldpass):
       ui._cprint('yellow', ' Password unchanged!')
       raise PasswordChangeFailure()
@@ -384,15 +443,17 @@ def main(ui):
         ui._cprint('red', 'timeout')
       except:
         import traceback
-        ui._print(traceback.format_exc())
+        ui._cprint('dark red', traceback.format_exc())
         ui._cprint('red', 'Exception verifying password on %s'%host)
 
-    if proto == 'ssh': pass
-      # try:
-      #   ui._cprint('yellow', 'Changing password on %s...'%host)
-      #   change_ssh_passwd(ui, host, username, oldpass, newpass)
-      # except:
-      #   ui._cprint('red', 'Password change failed on %s'%host)
+    if proto == 'ssh':
+      try:
+        ui._cprint('yellow', 'Changing password on %s...'%host)
+        change_ssh_passwd(ui, host, username, oldpass, newpass)
+      except Exception, e:
+        import traceback
+        ui._cprint('dark red', traceback.format_exc())
+        ui._cprint('red', 'Password change failed on %s: %s'%(host,e))
 
     if proto == 'localhost':
       try:

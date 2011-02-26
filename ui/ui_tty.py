@@ -87,15 +87,19 @@ class ui_tty(object):
       print msg
 
   @staticmethod
+  def _ctext(colour, msg):
+    return ui_tty.ttycolours[colour] + msg + ui_tty.ttycolours['reset']
+
+  @staticmethod
   def _cprint(colour, msg, sep=' ', end='\n', file=None):
     try:
-      ui_tty._print(ui_tty.ttycolours[colour] + msg + ui_tty.ttycolours['reset'], sep=sep, end=end, file=file)
+      ui_tty._print(ui_tty._ctext(colour, msg), sep=sep, end=end, file=file)
     except KeyError:
       raise
   
   @staticmethod
   def _cconfirm(colour, prompt, default=None):
     try:
-      return confirm(ui_tty.ttycolours[colour] + prompt + ui_tty.ttycolours['reset'], default=default)
+      return confirm(ui_tty._ctext(colour, prompt), default=default)
     except KeyError:
       raise
