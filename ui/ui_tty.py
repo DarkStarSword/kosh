@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
+from __future__ import print_function
+
 import ui_null
 import sys, tty
 
@@ -10,6 +12,18 @@ class ui_tty(object):
   # their own event loop and queries the mainloop (typically to get
   # file descriptors that need to be queries and input relayed):
   mainloop = ui_null.ui_null()
+
+  ttycolours = {
+      'dark red'    : '\x1b[0;31;40m',
+      'red'         : '\x1b[1;31;40m',
+      'dark green'  : '\x1b[0;32;40m',
+      'green'       : '\x1b[1;32;40m',
+      'dark yellow' : '\x1b[0;33;40m',
+      'yellow'      : '\x1b[1;33;40m',
+      'dark blue'   : '\x1b[0;34;40m',
+      'blue'        : '\x1b[1;34;40m',
+      'reset'       : '\x1b[0;37;40m',
+  }
 
   # I want to be able to call these without instantiating this class for the moment:
   @staticmethod
@@ -36,7 +50,7 @@ class ui_tty(object):
     """
     fileno = fp.fileno()
     if prompt:
-      print prompt,
+      print(prompt, end='')
     old = ui_tty.set_cbreak(fp)
     try:
       ch = fp.read(1)
@@ -47,5 +61,37 @@ class ui_tty(object):
     return ch
 
   def status(self, msg):
-    print msg
+    print(msg)
 
+  def confirm(self, prompt, default=None):
+    ret = ''
+    prompt = prompt + ' ' + {
+        True:  '(Y,n)',
+        False: '(y,N)',
+        None:  '(y,n)',
+        }[default] + ': '
+    while ret not in ['y', 'n']:
+      ret = self.read_nonbuffered(prompt).lower()
+      if default is not None and ret == '':
+        return default
+    return ret == 'y'
+
+  #--------WARNING: Unstable APIs below this line------------------------------
+
+  @staticmethod
+  def _print(msg, sep=' ', end='\n', file=None):
+    print(msg, sep=sep, end=end, file=file)
+
+  @staticmethod
+  def _cprint(colour, msg, sep=' ', end='\n', file=None):
+    try:
+      print(ui_tty.ttycolours[colour] + msg + ui_tty.ttycolours['reset'], sep=sep, end=end, file=file)
+    except KeyError:
+      raise
+  
+  @staticmethod
+  def _cconfirm(colour, prompt, default=None):
+    try:
+      return confirm(ui_tty.ttycolours[colour] + prompt + ui_tty.ttycolours['reset'], default=default)
+    except KeyError:
+      raise
