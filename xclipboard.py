@@ -4,7 +4,7 @@
 try:
   from Xlib import X, Xatom, error as Xerror
   import Xlib.display
-  defSelections = [Xatom.PRIMARY, Xatom.SECONDARY, 'CLIPBOARD']
+  defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
 except ImportError:
   print 'Error importing python-Xlib, X clipboard integration will be unavailable'
   defSelections = None
@@ -99,7 +99,7 @@ def _ownSelections(display, win, selections):
       raise Exception('Failed to own selection %i' % selection)
   return timestamp
 
-def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
+def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
   """
   Send a list of blobs via the clipboard (using X selections, cut buffers are
   not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
@@ -112,6 +112,8 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
 
   try: Xlib
   except NameError: raise XlibNotFound()
+
+  selections = txtselections[:]
 
   def handleSelectionRequest(e, ui):
     if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
@@ -135,8 +137,6 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
       _refuseSelectionRequest(e)
     return False
 
-  if type(blobs) == type(''): blobs = [blobs]
-
   # Opening the display prints 'Xlib.protocol.request.QueryExtension' to
   # stdout, so temporarily redirect it:
   import sys, StringIO
@@ -158,10 +158,10 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
   ui_fds = ui.mainloop.screen.get_input_descriptors()
   if ui_fds is None: ui_fds = []
   select_fds = set([display] + [sys.stdin] + ui_fds)
-  ui.status('Ready to send credentials via %s... (enter skips, escape cancels)'%str(selections))
-  ui.mainloop.draw_screen()
   try:
-    for blob in blobs:
+    for (field, blob) in blobs:
+      ui.status('Ready to send %s via %s... (enter skips, escape cancels)'%(field.upper(),str(txtselections)))
+      ui.mainloop.draw_screen()
       awaitingCompletion = []
       timestamp = _ownSelections(display, win, selections)
 
@@ -184,10 +184,8 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
           if fd == sys.stdin:
             char = sys.stdin.read(1)
             if char == '\n':
-              ui.status('Skipping...')
               skip = True
             elif char == '\x1b':
-              ui.status('Cancelled')
               return
           elif fd in ui_fds:
             ui.mainloop._update()
@@ -224,5 +222,5 @@ def sendViaClipboard(blobs, selections = defSelections, ui=ui_null()):
 
 if __name__ == '__main__':
   import sys
-  args = sys.argv[1:] if sys.argv[1:] else ['usage:' , sys.argv[0], ' { strings }']
-  sendViaClipboard(args, ui=ui_tty())
+  args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
+  sendViaClipboard(zip([ "Item %i"%x for x in range(len(args)) ], args), ui=ui_tty())

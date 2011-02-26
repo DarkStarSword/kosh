@@ -232,7 +232,7 @@ class passEntry(dict):
       fields = self.keys()
       for field in order:
         if field in fields:
-          yield self[field]
+          yield (field, self[field])
 
     return sortedGen(self, order)
 
