@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
+from ui import ui_tty, ui_null
+
 try:
   from Xlib import X, Xatom, error as Xerror
   import Xlib.display
@@ -13,23 +15,6 @@ import select
 
 class XlibNotFound(Exception): pass
 class XFailConnection(Exception): pass
-
-class ui_null(object):
-  """
-  Dummy class that will do nothing when called, and return itself as any of
-  it's attributes.  Intended to be used in place of a ui class where no
-  interaction is to take place. Calls such as ui_null().mainloop.foo.bar.baz()
-  will not raise any exceptions.
-  """
-  def __call__(self, *args): pass
-  def __getattribute__(self,name):
-    return self
-
-# FIXME: This shouldn't be here, and needs to be expanded
-class ui_tty(object):
-  def status(self, msg):
-    print msg
-
 
 def newTimestamp(display, window):
   """
@@ -159,6 +144,7 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
   if ui_fds is None: ui_fds = []
   select_fds = set([display] + [sys.stdin] + ui_fds)
   try:
+    old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
     for (field, blob) in blobs:
       ui.status('Ready to send %s via %s... (enter skips, escape cancels)'%(field.upper(),str(txtselections)))
       ui.mainloop.draw_screen()
@@ -213,6 +199,7 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
                   timeout = 0.01
             ui.mainloop.draw_screen()
   finally:
+    ui_tty.restore_cbreak(old)
     win.destroy()
     display.close() # I may have introduced a bug while adding the urwid loop
                     # stuff here - the clipboard selection remained grabbed
