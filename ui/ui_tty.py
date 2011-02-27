@@ -12,15 +12,22 @@ class ui_tty(object):
   mainloop = ui_null.ui_null()
 
   ttycolours = {
-      'dark red'    : '\x1b[0;31;40m',
-      'red'         : '\x1b[1;31;40m',
-      'dark green'  : '\x1b[0;32;40m',
-      'green'       : '\x1b[1;32;40m',
-      'dark yellow' : '\x1b[0;33;40m',
-      'yellow'      : '\x1b[1;33;40m',
-      'dark blue'   : '\x1b[0;34;40m',
-      'blue'        : '\x1b[1;34;40m',
-      'reset'       : '\x1b[0;37;40m',
+      'dark red'       : '\x1b[0;31;40m',
+      'red'            : '\x1b[1;31;40m',
+      'dark green'     : '\x1b[0;32;40m',
+      'green'          : '\x1b[1;32;40m',
+      'dark yellow'    : '\x1b[0;33;40m',
+      'yellow'         : '\x1b[1;33;40m',
+      'dark blue'      : '\x1b[0;34;40m',
+      'blue'           : '\x1b[1;34;40m',
+      'magenta'        : '\x1b[0;35;40m',
+      'bright magenta' : '\x1b[1;35;40m',
+      'cyan'           : '\x1b[0;36;40m',
+      'bright cyan'    : '\x1b[1;36;40m',
+      'grey'           : '\x1b[0;37;40m',
+      'white'          : '\x1b[1;37;40m',
+
+      'reset'          : '\x1b[0;37;40m',
   }
 
   # I want to be able to call these without instantiating this class for the moment:
