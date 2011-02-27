@@ -13,9 +13,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       'y': 'yank',
       }
 
-  def __init__(self, db, pwList, ui):
+  def __init__(self, db, pwForm, ui):
     self.db = db
-    self.pwList = pwList
+    self.pwForm = pwForm
     self.ui = ui
     self.visibleEntries = self.db
     self.refresh()
@@ -30,7 +30,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self._set_w(self.lb)
     if len(self.visibleEntries):
       self.showing = self.visibleEntries[self.lb.get_focus()[0].get_label()]
-      self.pwList.show(self.showing)
+      self.pwForm.show(self.showing)
 
   def keypress(self, size, key):
     ret = super(passwordList, self).keypress(size, key)
@@ -44,23 +44,23 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     selection = self.lb.get_focus()
     if selection[0] and selection[1] != self.selection:
       self.showing = self.db[selection[0].get_label()]
-      self.pwList.show(self.showing)
+      self.pwForm.show(self.showing)
       self.selection = selection[1]
     return ret
 
   def select(self, button):
-    self.pwList.reveal(self.showing)
+    self.pwForm.reveal(self.showing)
     # FIXME: focus
 
   def showOlder(self, size, key):
     if self.showing.older is not None:
       self.showing = self.showing.older
-      self.pwList.show(self.showing)
+      self.pwForm.show(self.showing)
 
   def showNewer(self, size, key):
     if self.showing.newer is not None:
       self.showing = self.showing.newer
-      self.pwList.show(self.showing)
+      self.pwForm.show(self.showing)
 
   def yank(self, size, key):
     import xclipboard
