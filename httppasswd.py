@@ -26,6 +26,7 @@
 
 import urllib2
 import urlparse
+import cookielib
 import HTMLParser
 import socket
 import version
@@ -275,15 +276,8 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
             action = f.action
             if action == 's':
               ret[f.getname()] = (action, f.getvalue())
-            elif action != 'x':
+            elif action in ['u', 'o', 'n']:
               ret[f.getname()] = (action, None)
-              import getpass # FIXME: UI
-              if action == 'u' and state.username is None:
-                state.username = getpass.getpass('Enter Username: ')
-              elif action == 'o' and state.oldpass is None:
-                state.oldpass = getpass.getpass('Enter OLD Password: ')
-              elif action == 'n' and state.newpass is None:
-                state.newpass = getpass.getpass('Enter NEW Password: ')
         ret[field.getname()] = ('s', field.getvalue()) # submit button
         return (form.getname(), form.getaction(), form.getmethod(), ret)
 
@@ -306,8 +300,17 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         if action == 's':
           val = raw_input('Enter new value: ')
           field.value = val
-        elif action in ['u','o','n']:
+        elif action == 'u':
+          if state.username is None or ui.confirm('Set new username?', False):
+            state.username = raw_input('Enter Username: ')
+          field.value = state.username
+        elif action in ['o','n']:
           field.value = '********'
+          import getpass # FIXME: UI
+          if action == 'o' and (state.oldpass is None or ui.confirm('Reset OLD password?', False)):
+            state.oldpass = getpass.getpass('Enter OLD Password: ')
+          elif action == 'n' and (state.newpass is None or ui.confirm('Reset NEW password?', False)):
+            state.newpass = getpass.getpass('Enter NEW Password: ')
 
   def apply(self, ui, state, (form_name, form_action, form_method, form_script)):
     self.update(ui, state)
@@ -582,6 +585,7 @@ class urlvcr(object):
       self.parent = parent
       self.action = action
       if self.parent:
+        self.cookies = self.parent.cookies # XXX Likely need to copy this and create new opener, maybe just copy when doing request
         self.opener = self.parent.opener # XXX: May need to copy this if we change it's state
         self.url = self.parent.url
         self.info = self.parent.info
@@ -589,7 +593,8 @@ class urlvcr(object):
         self.override_referer = self.parent.override_referer
         self.user_agent = self.parent.user_agent
       else:
-        self.opener = urllib2.build_opener()
+        self.cookies = cookielib.CookieJar()
+        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cookies))
         self.url = None
         self.info = None
         self.body = None
