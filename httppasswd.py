@@ -28,7 +28,9 @@ import urllib2
 import urlparse
 import cookielib
 import HTMLParser
+
 import socket
+import ssl
 import version
 
 USER_AGENT="kosh %s"%version.__version__
@@ -156,7 +158,7 @@ def find_element(original_elements, filters):
 
 class action_link(urlvcr_action, HTMLParser.HTMLParser):
   def valid(self, state):
-    return state.state is not None
+    return state.state is not None and state.body is not None
   def help(self, state):
     return "Follow link on current page"
   def ask_params(self, ui, state):
@@ -201,7 +203,10 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     self.reset()
     self._ui = ui
     # FIXME: Test and handle badly formatted HTML
-    self.feed(state.body)
+    try:
+      self.feed(state.body)
+    except HTMLParser.HTMLParseError, e:
+      self._ui._cprint('red', 'HTMLParseError: %s'%e)
   def reset(self):
     self.links = []
     self.dom = []
@@ -234,7 +239,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       'n': 'Fill in with new password',
   }
   def valid(self, state):
-    return state.state is not None
+    return state.state is not None and state.body is not None
   def help(self, state):
     return "Fill in and submit form on current page"
   def ask_params(self, ui, state):
@@ -435,7 +440,10 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     self.reset()
     self._ui = ui
     # FIXME: Test and handle badly formatted HTML
-    self.feed(state.body)
+    try:
+      self.feed(state.body)
+    except HTMLParser.HTMLParseError, e:
+      self._ui._cprint('red', 'HTMLParseError: %s'%e)
   def reset(self):
     self.forms = []
     self.dom = []
@@ -505,12 +513,50 @@ class action_referer(urlvcr_action):
 class action_view(urlvcr_action):
   changes_state = False
   def valid(self, state):
-    return state.state is not None
+    return state.state is not None and state.body is not None
   def help(self, state):
     return "View source + headers"
   def apply(self, ui, state, params):
     ui._cprint('bright cyan', str(state.info))
     ui._print(state.body)
+
+class action_meta(urlvcr_action, HTMLParser.HTMLParser):
+  def valid(self, state, ui=None):
+    if state.state is None or state.state.body is None:
+      return False
+    self.update(ui, state)
+    return self.refresh is not None
+  def help(self, state):
+    return "Follow meta refresh tag if present (usually involked automatically)"
+  def apply(self, ui, state, params):
+    self.update(ui, state)
+    if self.refresh is None:
+      raise ReplayFailure('No meta refresh tag, or unable to parse')
+    url = urlparse.urljoin(state.url, self.refresh)
+    state.request(ui, url)
+
+  def update(self, ui, state):
+    self.reset()
+    self._ui = ui
+    try:
+      self.feed(state.body)
+    except HTMLParser.HTMLParseError, e:
+      if self._ui:
+        self._ui._cprint('red', 'HTMLParseError: %s'%e)
+      else:
+        print 'HTMLParseError: %s'%e
+  def reset(self):
+    self.refresh = None
+    HTMLParser.HTMLParser.reset(self)
+  def handle_starttag(self, tag, attrs):
+    if tag == 'meta':
+      attrs = dict(attrs)
+      if 'http-equiv' in attrs and 'content' in attrs and attrs['http-equiv'].lower() == 'refresh':
+        # FIXME: Python 2.5 will not unescape attrs for us, so this won't work
+        try:
+          self.refresh = [ x for x in attrs['content'].split() if x.startswith('url=') ][0][4:].strip("'")
+        except IndexError:
+          self._ui._cprint('red', 'Error parsing meta refresh tag')
 
 class urlvcr_actions(dict):
   def display_valid_actions(self, ui, state):
@@ -548,6 +594,7 @@ actions = urlvcr_actions({
   't': action_agent(),
   'r': action_referer(),
   'v': action_view(), # Doesn't change state, OK to alter
+  'm': action_meta(), # Usually involked automatically
 })
 
 def get_actions_ask(ui, state):
@@ -666,7 +713,24 @@ class urlvcr(object):
       break
     self.state.url = response.geturl()
     self.state.info = response.info()
-    self.state.body = response.read()
+    self.state.body = ''
+    tries = TRIES
+    while (tries):
+      tries -= 1
+      try:
+        self.state.body += response.read()
+      except (socket.timeout, urllib2.URLError, ssl.SSLError), e:
+        ui._cprint('red', 'Exception while reading page: %s'%e)
+        if tries:
+          ui._cprint('dark red', 'Retrying...')
+          continue
+        raise
+      break
+
+    a = action_meta()
+    if a.valid(self, ui):
+      ui._cprint('yellow', 'meta refresh tag detected, following...')
+      a.apply(ui, self, None)
 
   def __str__(self):
     if self.state is None:
