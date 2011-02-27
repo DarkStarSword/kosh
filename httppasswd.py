@@ -776,6 +776,24 @@ def main(ui, script=None, username=None, oldpass=None, newpass=None):
   script = state.getscript()
   return script
 
+def json_str(v):
+  def json_str_dict(d):
+    n = {}
+    for (k,v) in d.items():
+      n[json_str(k)] = json_str(v)
+    return n
+  def json_str_list(v):
+    return [ json_str(x) for x in v ]
+
+  if type(v) in (str, unicode):
+    return str(v)
+  if type(v) == dict:
+    return json_str_dict(v)
+  if type(v) in (list, tuple):
+    return json_str_list(v)
+  return v
+
+
 if __name__ == '__main__':
   #test_expect_groups()
   import ui.ui_tty
@@ -793,6 +811,7 @@ if __name__ == '__main__':
   if ui.confirm('Do you have credentials to paste?', False):
     credentials = getpass.getpass('Paste them now and press enter. Echo is off: ')
     credentials = json.loads(base64.decodestring(credentials))
+    credentials = json_str(credentials)
     if 'username' in credentials: username=credentials['username']
     if 'oldpass' in credentials: oldpass=credentials['oldpass']
     if 'newpass' in credentials: newpass=credentials['newpass']
@@ -810,6 +829,7 @@ if __name__ == '__main__':
   if len(sys.argv) > 1:
     for script in sys.argv[1:]:
       s = json.loads(base64.decodestring(script))
+      s = json_str(s)
       ui._print('Replaying script: %s'%s)
       main(ui, s, username, oldpass, newpass)
   else:
