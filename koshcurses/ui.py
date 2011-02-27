@@ -113,12 +113,16 @@ class passwordForm(urwid.WidgetWrap):
     self.fname = widgets.koshEdit('Name: ', self.entry.name)
     self.fields = [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ]
     self.newfield = widgets.koshEdit('Add new field: ')
-    self.content = [self.fname] + self.fields + [urwid.Divider(), self.newfield] + [ urwid.GridFlow(
+    self.record_http_script = widgets.koshEdit('Record HTTP password change script: ')
+    self._edit()
+    self._update()
+  def _edit(self):
+    self.content = [self.fname] + self.fields + [urwid.Divider(), self.newfield,
+        self.record_http_script] + [ urwid.GridFlow(
           [urwid.Button('Save', self.commit),
             urwid.Button('Cancel', self.discard) ],
           10, 3, 1, 'center')
       ]
-    self._update()
 
   def add_new_field(self):
     field = self.newfield.get_edit_text().strip()
@@ -126,13 +130,44 @@ class passwordForm(urwid.WidgetWrap):
     if field in self.entry: return
     self.entry[field] = ''
     self.fields += [ widgets.passwordEdit(field+': ', '', revealable=True) ]
-    self.content = [self.fname] + self.fields + [urwid.Divider(), self.newfield] + [ urwid.GridFlow(
-          [urwid.Button('Save', self.commit),
-            urwid.Button('Cancel', self.discard) ],
-          10, 3, 1, 'center')
-      ]
+    self._edit()
     self._update()
     #self._w.set_focus(self.newfield)
+
+  def do_record_http_script(self):
+    field = 'HACK_HTTP-SCRIPT_'+self.record_http_script.get_edit_text().strip()
+    if not field: return
+    import httppasswd
+    # FIXME: should fetch up to date stuff from editing
+    username = self.entry['Username']
+    newpass = self.entry['Password']
+    # FIXME: Should walk list to find this
+    oldpass = self.entry['OldPassword']
+    import other_ui.ui_tty as ui
+    old = ui.reset()
+    try:
+      script = httppasswd.main(ui(), None, username, oldpass, newpass)
+    finally:
+      ui.restore(old)
+    self.fields += [ widgets.passwordEdit(field+': ', script, revealable=True) ]
+    self._edit()
+    self._update()
+  def do_play_http_script(self):
+    import httppasswd
+    username = self.entry['Username']
+    newpass = self.entry['Password']
+    # FIXME: Should walk list to find this
+    oldpass = self.entry['OldPassword']
+    script = self.entry[self._w.get_focus()[0].get_label()]
+    import other_ui.ui_tty as ui
+    import time
+    old = ui.reset()
+    try:
+      httppasswd.main(ui(), script, username, oldpass, newpass)
+      time.sleep(5)
+    finally:
+      time.sleep(5)
+      ui.restore(old)
 
   def validate(self):
     return self.fname.get_edit_text() != ''
@@ -160,6 +195,11 @@ class passwordForm(urwid.WidgetWrap):
     self.cancel()
 
   def keypress(self, size, key):
+    focus = self._w.get_focus()[0]
+    if key == 'enter':
+      try:
+        if focus.get_label().startswith('HACK_HTTP-SCRIPT_'): self.do_play_http_script()
+      except: pass
     ret = super(passwordForm, self).keypress(size, key)
     if ret is not None:
       # FIXME: generalise these. Tab not handled ideally:
@@ -167,7 +207,9 @@ class passwordForm(urwid.WidgetWrap):
       if key in ['k', 'shift tab']: return self.keypress(size, 'up')
       if key == 'h': return self.keypress(size, 'left')
       if key == 'l': return self.keypress(size, 'right')
-      if key == 'enter' and self._w.get_focus()[0] == self.newfield: self.add_new_field()
+      if key == 'enter':
+        if focus == self.newfield: self.add_new_field()
+        if focus == self.record_http_script: self.do_record_http_script()
     return ret
 
   def _update(self):

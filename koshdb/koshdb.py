@@ -50,7 +50,8 @@ class _masterKey(object):
 
   def touch(self):
     self._timer = threading.Timer(self.TIMEOUT, self.expire)
-    self._timer.start()
+    # FIXME: This doesn't work properly anyway and until I fix it is is just too annoying:
+    #self._timer.start()
 
   def expire(self):
     """ MUST be called to clean up threads, otherwise the program will not terminate until timeout """

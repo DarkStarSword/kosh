@@ -562,7 +562,7 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
         try:
           self.refresh = [ x for x in attrs['content'].split() if x.startswith('url=') ][0][4:].strip("'")
         except IndexError:
-          self._ui._cprint('red', 'Error parsing meta refresh tag')
+          self._ui._cprint('red', 'Error parsing meta refresh tag') # FIXME: if called from display_valid_actions, ui==None
 
 class urlvcr_actions(dict):
   def display_valid_actions(self, ui, state):
@@ -600,7 +600,7 @@ actions = urlvcr_actions({
   't': action_agent(),
   'r': action_referer(),
   'v': action_view(), # Doesn't change state, OK to alter
-  'm': action_meta(), # Usually involked automatically
+  #'m': action_meta(), # Usually involked automatically
 })
 
 def get_actions_ask(ui, state):
@@ -763,16 +763,20 @@ class urlvcr(object):
       return object.__setattr__(self, name, val)
 
 def main(ui, script=None, username=None, oldpass=None, newpass=None):
+  import json
+  import base64
   state = urlvcr(username, oldpass, newpass)
   # If replaying a script, use get_actions_from_script
   if script:
+    script = json.loads(script)
+    script = json_str(script)
     action_seq = get_actions_from_script(ui, state, script)
   else:
     action_seq = get_actions_ask(ui, state)
   for action in action_seq:
     apply_action(ui, state, action)
   script = state.getscript()
-  return script
+  return json.dumps(script)
 
 def json_str(v):
   def json_str_dict(d):
@@ -826,13 +830,12 @@ if __name__ == '__main__':
 
   if len(sys.argv) > 1:
     for script in sys.argv[1:]:
-      s = json.loads(base64.decodestring(script))
-      s = json_str(s)
+      s = base64.decodestring(script)
       ui._print('Replaying script: %s'%s)
       main(ui, s, username, oldpass, newpass)
   else:
     script = main(ui, None, username, oldpass, newpass)
     if script is not None:
       ui._print('Script\n%s'%script)
-      script = base64.encodestring(json.dumps(script)).replace('\n','')
+      script = base64.encodestring(script).replace('\n','')
       ui._print('Pass this back into the program to replay this script:\n%s'%script)

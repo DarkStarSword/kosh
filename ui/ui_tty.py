@@ -48,6 +48,20 @@ class ui_tty(object):
     tty.tcsetattr(fileno, tty.TCSADRAIN, old)
 
   @staticmethod
+  def reset():
+    old = (tty.tcgetattr(sys.stdin.fileno()), tty.tcgetattr(sys.stdout.fileno()), tty.tcgetattr(sys.stderr.fileno()))
+    import subprocess
+    subprocess.call('reset')
+    return old
+
+  @staticmethod
+  def restore(old):
+    (i, o, e) = old
+    tty.tcsetattr(sys.stdin.fileno(), tty.TCSADRAIN, i)
+    tty.tcsetattr(sys.stdout.fileno(), tty.TCSADRAIN, o)
+    tty.tcsetattr(sys.stderr.fileno(), tty.TCSADRAIN, e)
+
+  @staticmethod
   def read_nonbuffered(prompt=None, echo=True, size=1, fp=sys.stdin):
     """
     Read size bytes from this file, which must be a tty (typically stdin),
