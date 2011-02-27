@@ -48,14 +48,20 @@ class ui_tty(object):
     """
     fileno = fp.fileno()
     if prompt:
-      ui_tty._print(prompt, end='')
+      try:
+        ui_tty._print(prompt, end='')
+      except UnicodeDecodeError:
+        ui_tty._print(prompt.encode('latin-1'), end='')
     old = ui_tty.set_cbreak(fp)
     try:
       ch = fp.read(1)
     finally:
       ui_tty.restore_cbreak(old, fp)
     if echo:
-      ui_tty._print(ch)
+      try:
+        ui_tty._print(ch)
+      except UnicodeDecodeError:
+        ui_tty._print(ch.encode('latin-1'))
     return ch
 
   def status(self, msg):

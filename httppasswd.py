@@ -126,7 +126,9 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     self.update(ui, state)
     links = self.links
     while True:
-      ui._print('\n'.join([ "%s\n\t-> %s"%(l.data if l.data else '<NO TEXT LINK>', l['href'] if 'href' in l else '<NO URL>') for l in links]).encode('latin-1')) #FIXME: Damn unicode
+      ui._print('\n'.join(
+        map(str,links)
+        ))
       filter = raw_input("Enter part of the link to follow: ").lower()
       if not filter:
         raise _CancelAction()
@@ -139,7 +141,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
           ui._cprint("red", 'No HREF attribute in link')
         else:
           url = urlparse.urljoin(state.url, url)
-          if ui._cconfirm('yellow', 'Follow link "%s" to %s'%(link.data,ui._ctext('blue', url)), True):
+          if ui.confirm('Follow link "%s" to %s'%(ui._ctext('yellow', link.data), ui._ctext('blue', url)), True):
             return link.data
       if not len(links):
         links = self.links
@@ -153,10 +155,19 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
 
   class Link(dict):
     data = ''
+    def __init__(self, d, ui):
+      self._ui = ui
+      dict.__init__(self,d)
+    def __str__(self):
+      return "%30s -> %s"%(
+        '"%s"'%self._ui._ctext('yellow', self.data) if self.data else '<NO TEXT LINK>',
+        self._ui._ctext('blue', self['href']) if 'href' in self else '<NO URL>'
+      )
 
   def update(self, ui, state):
     self.reset()
     self._ui = ui
+    # FIXME: Test and handle badly formatted HTML
     self.feed(state.body)
   def reset(self):
     self.links = []
@@ -164,7 +175,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     HTMLParser.HTMLParser.reset(self)
   def handle_starttag(self, tag, attrs):
     if tag == 'a':
-      self.dom.append(self.Link(attrs))
+      self.dom.append(self.Link(attrs, self._ui))
       #self._ui._cprint('blue', '%i: <a href="%%s">, attrs:%s'%(self.in_links,repr(dict(attrs))))
     # FIXME: Catch images (alttext, url) or other objects that could identify a link
   def handle_endtag(self, tag):
@@ -173,7 +184,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
         #self._ui._cprint('yellow', '</a INVALID>')
         return
       link = self.dom.pop()
-      link.data = ' '.join(link.data.split()).decode('latin-1') #Normalise whitespace #FIXME: Damn unicode
+      link.data = ' '.join(link.data.split()) #Normalise whitespace
       self.links.append(link)
       #self._ui._cprint('blue', '%i: </a>'%self.in_links)
   def handle_data(self, data):
@@ -211,7 +222,7 @@ actions = urlvcr_actions({
   'q': action_quit(),
   'u': action_undo(),
   'b': action_back(),
-  'f': action_link(), # Might want hjkl to scroll...
+  'l': action_link(),
 })
 
 def get_actions_ask(ui, state):
