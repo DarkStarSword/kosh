@@ -93,7 +93,7 @@ class action_quit(urlvcr_action):
   def valid(self, state):
     return True
   def help(self, state):
-    return "Quit, discarding script (for now)"
+    return "Quit"
   def ask_params(self, ui, state):
     raise StopIteration('Quit')
 
@@ -345,10 +345,18 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       if action == 's':
         data[f] = params
       elif action == 'u':
+        if state.username is None:
+          state.username = raw_input('Enter Username: ')
         data[f] = state.username
       elif action == 'o':
+        if state.oldpass is None:
+          import getpass # FIXME: UI
+          state.oldpass = getpass.getpass('Enter OLD Password: ')
         data[f] = state.oldpass
       elif action == 'n':
+        if state.newpass is None:
+          import getpass # FIXME: UI
+          state.newpass = getpass.getpass('Enter NEW Password: ')
         data[f] = state.newpass
       else:
         raise ReplayFailure('Invalid action while filling in form: %s'%action)
@@ -601,9 +609,11 @@ def get_actions_ask(ui, state):
   while True:
     yield actions.ask_next_action(ui, state)
 
-def get_actions_from_script(state, script):
-  # STUB: Intended to be used as a generator to return the actions in the script
-  pass
+def get_actions_from_script(ui, state, script):
+  for action in script:
+    ui._cprint('white', 'Replaying action %s...'%action)
+    yield action
+    ui._cprint('green', 'Current State:\n%s'%str(state))
 
 def apply_action(ui, state, action):
   a = actions[action[0]]
@@ -737,6 +747,11 @@ class urlvcr(object):
       return ''
     return '\n'.join([ "%i: %s"%(i,repr(a)) for (i,a) in enumerate(self.state.list())])
 
+  def getscript(self):
+    if self.state is None:
+      return None
+    return [ x['action'] for x in self.state.list()]
+
   def __getattribute__(self, name):
     try:
       return object.__getattribute__(self, name)
@@ -749,19 +764,34 @@ class urlvcr(object):
     else:
       return object.__setattr__(self, name, val)
 
-def main(ui):
-  #script = []
+def main(ui, script=None):
   state = urlvcr()
   # If replaying a script, use get_actions_from_script
-  action_seq = get_actions_ask(ui, state)
+  if script:
+    action_seq = get_actions_from_script(ui, state, script)
+  else:
+    action_seq = get_actions_ask(ui, state)
   for action in action_seq:
     apply_action(ui, state, action)
-    #script.append(action)
-    #print action
-    #print state
-
+  script = state.getscript()
+  return script
 
 if __name__ == '__main__':
   #test_expect_groups()
   import ui.ui_tty
-  main(ui.ui_tty())
+  import sys
+  import json
+  import base64
+
+  ui = ui.ui_tty()
+  if len(sys.argv) > 1:
+    for script in sys.argv[1:]:
+      s = json.loads(base64.decodestring(script))
+      ui._print('Replaying script: %s'%s)
+      main(ui, s)
+  else:
+    script = main(ui)
+    if script is not None:
+      ui._print('Script\n%s'%script)
+      script = base64.encodestring(json.dumps(script)).replace('\n','')
+      ui._print('Pass this back into the program to replay this script:\n%s'%script)
