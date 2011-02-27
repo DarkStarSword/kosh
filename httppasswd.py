@@ -764,8 +764,8 @@ class urlvcr(object):
     else:
       return object.__setattr__(self, name, val)
 
-def main(ui, script=None):
-  state = urlvcr()
+def main(ui, script=None, username=None, oldpass=None, newpass=None):
+  state = urlvcr(username, oldpass, newpass)
   # If replaying a script, use get_actions_from_script
   if script:
     action_seq = get_actions_from_script(ui, state, script)
@@ -782,15 +782,38 @@ if __name__ == '__main__':
   import sys
   import json
   import base64
+  import getpass
 
   ui = ui.ui_tty()
+
+  username=None
+  oldpass=None
+  newpass=None
+
+  if ui.confirm('Do you have credentials to paste?', False):
+    credentials = getpass.getpass('Paste them now and press enter. Echo is off: ')
+    credentials = json.loads(base64.decodestring(credentials))
+    if 'username' in credentials: username=credentials['username']
+    if 'oldpass' in credentials: oldpass=credentials['oldpass']
+    if 'newpass' in credentials: newpass=credentials['newpass']
+  elif ui.confirm('Would you like to encode some now (NOTE: this is not using a secure encoding)?', False):
+    username = raw_input('Username: ')
+    oldpass = getpass.getpass('OLD Password: ')
+    newpass = getpass.getpass('NEW Password: ')
+    credentials = {}
+    if username: credentials['username'] = username
+    if oldpass: credentials['oldpass'] = oldpass
+    if newpass: credentials['newpass'] = newpass
+    credentials = base64.encodestring(json.dumps(credentials)).replace('\n','')
+    ui._print('Credentials: %s'%credentials)
+
   if len(sys.argv) > 1:
     for script in sys.argv[1:]:
       s = json.loads(base64.decodestring(script))
       ui._print('Replaying script: %s'%s)
-      main(ui, s)
+      main(ui, s, username, oldpass, newpass)
   else:
-    script = main(ui)
+    script = main(ui, None, username, oldpass, newpass)
     if script is not None:
       ui._print('Script\n%s'%script)
       script = base64.encodestring(json.dumps(script)).replace('\n','')
