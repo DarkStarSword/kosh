@@ -145,7 +145,10 @@ class passEntry(dict):
   BLOB_PREFIX = 'p:'
 
   def __init__(self, masterKey, blob=None, name=None):
-    self._masterKey = weakref.proxy(masterKey)
+    if type(masterKey) == weakref.ProxyType:
+      self._masterKey = masterKey
+    else:
+      self._masterKey = weakref.proxy(masterKey)
     self._timestamp = None
     self.older = None
     self.newer = None
@@ -158,6 +161,13 @@ class passEntry(dict):
       self.name = name
     else:
       self.name = ''
+
+  def clone(self):
+    import copy
+    n = passEntry(self._masterKey, name=self.name)
+    dict.__init__(n, self)
+    n.meta = copy.copy(self.meta)
+    return n
 
   def __str__(self):
     return self.BLOB_PREFIX + self._blob

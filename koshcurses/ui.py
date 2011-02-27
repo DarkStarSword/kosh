@@ -11,6 +11,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       'f5': 'showOlder',
       'f6': 'showNewer',
       'y': 'yank',
+      'e': 'edit',
       }
 
   def __init__(self, db, pwForm, ui):
@@ -66,6 +67,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     import xclipboard
     xclipboard.sendViaClipboard(self.showing.clipIter(), ui=self.ui)
 
+  def edit(self, size, key):
+    self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
+
   def search(self, search):
     import string
     if not search:
@@ -108,12 +112,27 @@ class passwordForm(urwid.WidgetWrap):
     self.okCallback=ok
     self.fname = widgets.koshEdit('Name: ', self.entry.name)
     self.fields = [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ]
-    self.content = [self.fname] + self.fields + [ urwid.GridFlow(
+    self.newfield = widgets.koshEdit('Add new field: ')
+    self.content = [self.fname] + self.fields + [urwid.Divider(), self.newfield] + [ urwid.GridFlow(
           [urwid.Button('Save', self.commit),
             urwid.Button('Cancel', self.discard) ],
           10, 3, 1, 'center')
       ]
     self._update()
+
+  def add_new_field(self):
+    field = self.newfield.get_edit_text().strip()
+    if not field: return
+    if field in self.entry: return
+    self.entry[field] = ''
+    self.fields += [ widgets.passwordEdit(field+': ', '', revealable=True) ]
+    self.content = [self.fname] + self.fields + [urwid.Divider(), self.newfield] + [ urwid.GridFlow(
+          [urwid.Button('Save', self.commit),
+            urwid.Button('Cancel', self.discard) ],
+          10, 3, 1, 'center')
+      ]
+    self._update()
+    #self._w.set_focus(self.newfield)
 
   def validate(self):
     return self.fname.get_edit_text() != ''
@@ -148,6 +167,7 @@ class passwordForm(urwid.WidgetWrap):
       if key in ['k', 'shift tab']: return self.keypress(size, 'up')
       if key == 'h': return self.keypress(size, 'left')
       if key == 'l': return self.keypress(size, 'right')
+      if key == 'enter' and self._w.get_focus()[0] == self.newfield: self.add_new_field()
     return ret
 
   def _update(self):
