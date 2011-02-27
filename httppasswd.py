@@ -27,6 +27,7 @@
 import urllib2
 import urlparse
 import HTMLParser
+import socket
 
 TIMEOUT=10 # FIXME: Configurable
 DEBUG=True
@@ -69,7 +70,7 @@ class action_goto(urlvcr_action):
         raise _CancelAction()
       if url.find('://') != -1:
         break
-      if ui.read_nonbuffered("No protocol specified - assume http? (Y,n) "):
+      if ui.confirm("No protocol specified - assume http?", True):
         url = 'http://'+url
         break
     return url
@@ -138,7 +139,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
           ui._cprint("red", 'No HREF attribute in link')
         else:
           url = urlparse.urljoin(state.url, url)
-          if ui._cconfirm('blue', 'Follow link "%s" to %s'%(link.data,ui._ctext('dark blue', url)), True):
+          if ui._cconfirm('yellow', 'Follow link "%s" to %s'%(link.data,ui._ctext('blue', url)), True):
             return link.data
       if not len(links):
         links = self.links
@@ -154,11 +155,9 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     data = ''
 
   def update(self, ui, state):
-    if not hasattr(self,'state') or self.state != state.state:
-      self.reset()
-      self._ui = ui
-      self.feed(state.body)
-      self.state = state.state
+    self.reset()
+    self._ui = ui
+    self.feed(state.body)
   def reset(self):
     self.links = []
     self.dom = []
@@ -229,7 +228,7 @@ def apply_action(ui, state, action):
     state.push(action)
   try:
     a.apply(ui, state, action[1])
-  except urllib2.URLError, e:
+  except urllib2.URLError, socket.timeout:
     assert(a.changes_state)
     ui._cprint('dark red', 'Unhandled URLError, undoing last action')
     state.pop()
@@ -273,12 +272,20 @@ class urlvcr(object):
     # FIXME: show progress:
     request = urllib2.Request(url)
     try:
-      response = self.state.opener.open(request, timeout=TIMEOUT)
+      try:
+        response = self.state.opener.open(request, timeout=TIMEOUT)
+      except TypeError:
+        # Python 2.5 does not support a timeout throught urllib2:
+        socket.setdefaulttimeout(TIMEOUT)
+        response = self.state.opener.open(request)
     except urllib2.URLError, e:
       if hasattr(e, 'reason'):
         ui._cprint('red', 'Failed to reach server: %s'%e.reason)
       elif hasattr(e, 'code'):
         ui._cprint('red', 'HTTP status code: %s'%e.code)
+      raise
+    except socket.timeout:
+      ui._cprint('red', 'Failed to reach server: timeout')
       raise
     self.state.url = response.geturl()
     self.state.info = response.info()
