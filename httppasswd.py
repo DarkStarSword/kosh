@@ -32,6 +32,7 @@ import version
 
 USER_AGENT="kosh %s"%version.__version__
 TIMEOUT=10 # FIXME: Configurable
+TRIES=5
 DEBUG=True
 
 class _CancelAction(Exception): pass
@@ -616,7 +617,6 @@ class urlvcr(object):
     if get:
       get = '?'+urllib.urlencode(get)
 
-    ui._cprint('bright cyan', 'Navigating to: %s%s'%(url,get))
     request = urllib2.Request(url+get, post)
 
     referer = None
@@ -625,29 +625,40 @@ class urlvcr(object):
     elif actions[self.state.action[0]].use_referer and self.state.parent is not None:
         referer = self.state.parent.url
     if referer is not None:
-      ui._cprint('cyan', 'Referer: %s'%referer)
       request.add_header('Referer', referer)
 
     if self.state.user_agent:
-      ui._cprint('cyan', 'User-agent: %s'%self.state.user_agent)
       request.add_header('User-agent', self.state.user_agent)
 
-    try:
+    tries = TRIES
+    while (tries):
+      tries -= 1
+      ui._cprint('bright cyan', '[%i/%i]: Navigating to: %s%s'%(TRIES-tries,TRIES,url,get))
+      if referer is not None:
+        ui._cprint('cyan', 'Referer: %s'%referer)
+      if self.state.user_agent:
+        ui._cprint('cyan', 'User-agent: %s'%self.state.user_agent)
+
       try:
-        response = self.state.opener.open(request, timeout=TIMEOUT)
-      except TypeError:
-        # Python 2.5 does not support a timeout throught urllib2:
-        socket.setdefaulttimeout(TIMEOUT)
-        response = self.state.opener.open(request)
-    except urllib2.HTTPError, e:
-      ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
-      raise
-    except urllib2.URLError, e:
-      ui._cprint('red', 'Failed to reach server: %s'%e.reason)
-      raise
-    except socket.timeout:
-      ui._cprint('red', 'Failed to reach server: timeout')
-      raise
+        try:
+          response = self.state.opener.open(request, timeout=TIMEOUT)
+        except TypeError:
+          # Python 2.5 does not support a timeout throught urllib2:
+          socket.setdefaulttimeout(TIMEOUT)
+          response = self.state.opener.open(request)
+      except urllib2.HTTPError, e:
+        ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
+        raise
+      except (urllib2.URLError, socket.timeout), e:
+        if hasattr(e, 'reason'):
+          ui._cprint('red', 'Failed to reach server: %s'%e.reason)
+        else:
+          ui._cprint('red', 'Failed to reach server: timeout')
+        if tries:
+          ui._cprint('dark red', 'Retrying...')
+          continue
+        raise
+      break
     self.state.url = response.geturl()
     self.state.info = response.info()
     self.state.body = response.read()
