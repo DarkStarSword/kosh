@@ -127,7 +127,7 @@ class action_back(urlvcr_action):
 def select_element(ui, prompt, original_elements):
   unfiltered_elements = [ x for x in original_elements if x.selectable() ]
   if not len(unfiltered_elements):
-    raise _CancelAction('No elements found of matching type')
+    raise _CancelAction('No selectable elements found of matching type')
   elements = unfiltered_elements
   while True:
     if not len(elements):
@@ -139,6 +139,18 @@ def select_element(ui, prompt, original_elements):
     if not filter:
       raise _CancelAction('User aborted')
     elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
+
+def find_element(original_elements, filters):
+  elements = [ x for x in original_elements if x.selectable() ]
+  if not len(elements):
+    raise ReplayFailure('No selectable elements found of matching type')
+  for filter in filters:
+    elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
+  if not len(elements):
+    raise ReplayFailure('All selectable elements of matching type were filtered')
+  if len(elements) > 1:
+    raise ReplayFailure('Multiple elements were matched by filters')
+  return elements[0]
 
 class action_link(urlvcr_action, HTMLParser.HTMLParser):
   def valid(self, state):
@@ -259,8 +271,19 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           elif t == 'radio' and not f.getchecked():
             pass # Don't submit unchecked radio buttons
           else: # Otherwise, add it:
-            ret[f.getname()] = f.getvalue()
-        ret[field.getname()] = field.getvalue() # submit button
+            action = f.action
+            if action == 's':
+              ret[f.getname()] = (action, f.getvalue())
+            elif action != 'x':
+              ret[f.getname()] = (action, None)
+              import getpass # FIXME: UI
+              if action == 'u' and state.username is None:
+                state.username = getpass.getpass('Enter Username: ')
+              elif action == 'o' and state.oldpass is None:
+                state.oldpass = getpass.getpass('Enter OLD Password: ')
+              elif action == 'n' and state.newpass is None:
+                state.newpass = getpass.getpass('Enter NEW Password: ')
+        ret[field.getname()] = ('s', field.getvalue()) # submit button
         return (form.getname(), form.getaction(), form.getmethod(), ret)
 
       # FIXME: Most of this stuff should be moved into appropriate classes:
@@ -283,19 +306,48 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           val = raw_input('Enter new value: ')
           field.value = val
         elif action in ['u','o','n']:
-          field.value = 'XXX'
+          field.value = '********'
 
-  def apply(self, ui, state, (form_name, form_action, form_method, form)):
-    # FIXME: Verify form exists and all fields passed in exist in it
-    # don't attempt to fill in fields in the form that weren't passed in
-    # self.update(ui, state)
-    # if error with form:
-    #   raise ReplayFailure('Something is wrong')
+  def apply(self, ui, state, (form_name, form_action, form_method, form_script)):
+    self.update(ui, state)
+    # form_action may not match if the submission URL changes, for now just match on name:
+    form = find_element(self.forms, [form_name] if form_name is not None else [])
+    #form = find_element(self.forms, [x for x in [form_name, form_action] if x is not None])
+    # XXX: Similar logic to submitting above, can probably refactor this:
+    data = {}
+    fields = []
+    for f in form.fields:
+      if type(f) != action_form.Form.Field:
+        continue
+      field_name = f.getname()
+      fields.append(field_name)
+      t = f.gettype()
+      if t == 'submit':
+        pass # Only pressed submit button sent
+      elif t == 'radio' and not f.getchecked():
+        pass # Don't submit unchecked radio buttons
+      else: # Otherwise, add it:
+        data[field_name] = f.getvalue()
+    # Now, fill in details saved from form:
+    for f in form_script:
+      if f not in fields:
+        raise ReplayFailure('Filling in form failed: Saved field %s not found in current form',f)
+      (action, params) = form_script[f]
+      if action == 's':
+        data[f] = params
+      elif action == 'u':
+        data[f] = state.username
+      elif action == 'o':
+        data[f] = state.oldpass
+      elif action == 'n':
+        data[f] = state.newpass
+      else:
+        raise ReplayFailure('Invalid action while filling in form: %s'%action)
     url = urlparse.urljoin(state.url, form_action)
     if form_method.upper() == 'POST':
-      state.request(ui, url, post=form)
+      state.request(ui, url, post=data)
     else:
-      state.request(ui, url, get=form)
+      state.request(ui, url, get=data)
 
   class Form(dict):
     class Field(dict):
@@ -519,14 +571,15 @@ class urlvcr(object):
   for later replay.
   """
   state = None
+  def __init__(self, username=None, oldpass=None, newpass=None):
+    self.username = username
+    self.oldpass = oldpass
+    self.newpass = newpass
 
   class urlstate(object):
-    def __init__(self, parent, action, username=None, oldpass=None, newpass=None):
+    def __init__(self, parent, action):
       self.parent = parent
       self.action = action
-      self.username = username
-      self.oldpass = oldpass
-      self.newpass = newpass
       if self.parent:
         self.opener = self.parent.opener # XXX: May need to copy this if we change it's state
         self.url = self.parent.url
