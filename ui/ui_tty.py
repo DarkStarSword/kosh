@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
-from __future__ import print_function
-
 import ui_null
 import sys, tty
 
@@ -50,18 +48,18 @@ class ui_tty(object):
     """
     fileno = fp.fileno()
     if prompt:
-      print(prompt, end='')
+      ui_tty._print(prompt, end='')
     old = ui_tty.set_cbreak(fp)
     try:
       ch = fp.read(1)
     finally:
       ui_tty.restore_cbreak(old, fp)
     if echo:
-      print(ch)
+      ui_tty._print(ch)
     return ch
 
   def status(self, msg):
-    print(msg)
+    ui_tty._print(msg)
 
   def confirm(self, prompt, default=None):
     ret = ''
@@ -80,12 +78,18 @@ class ui_tty(object):
 
   @staticmethod
   def _print(msg, sep=' ', end='\n', file=None):
-    print(msg, sep=sep, end=end, file=file)
+    #print(msg, sep=sep, end=end, file=file)
+    # python 2.5 doesn't have __furure__.print_function
+    # FIXME: file, sep
+    if end != '\n':
+      print msg+end,
+    else:
+      print msg
 
   @staticmethod
   def _cprint(colour, msg, sep=' ', end='\n', file=None):
     try:
-      print(ui_tty.ttycolours[colour] + msg + ui_tty.ttycolours['reset'], sep=sep, end=end, file=file)
+      ui_tty._print(ui_tty.ttycolours[colour] + msg + ui_tty.ttycolours['reset'], sep=sep, end=end, file=file)
     except KeyError:
       raise
   
