@@ -25,8 +25,10 @@ old_pass_prompts = hashable_list([
 
 new_pass_prompts = hashable_list([
     'Enter new password: ',
+    'New password: ',
     'New Password: ',
     'Enter new UNIX password: ',
+    'New UNIX password: '
     ])
 
 confirm_pass_prompts = hashable_list([
@@ -45,6 +47,7 @@ failure_prompts = hashable_list([
 success_prompts = hashable_list([
     'Password changed.',
     'passwd: password updated successfully',
+    'passwd: all authentication tokens updated successfully.'
     ])
 
 def flatten1(l):
@@ -150,6 +153,7 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
     #print log
     raise
   except pexpect.TIMEOUT:
+    mustclose = True # Otherwise we might try entering 'exit' at a prompt
     ui._cprint('red', 'timeout')
     #print log
     raise state('TIMEOUT')
