@@ -3,6 +3,8 @@
 
 import sys
 
+__version__ = 'v0.1 development' #FIXME: use git describe if from git repository
+
 def checkCrypto():
   try:
     import Crypto

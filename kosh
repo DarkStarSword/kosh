@@ -1,12 +1,12 @@
 #!/usr/bin/env python2.6
 # vi:sw=2:ts=2:expandtab
 
-__version__ = '0.1' #FIXME: use git describe if from git repository
 passdb_default = '~/.kosh/koshdb'
 
 urwid_req_version = '0.9.9.1' # Fixme: what version is actually required?
 
 import version
+__version__ = version.__version__
 version.checkCrypto()
 version.checkUrwid(urwid_req_version)
 

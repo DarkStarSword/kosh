@@ -28,13 +28,20 @@ import urllib2
 import urlparse
 import HTMLParser
 import socket
+import version
 
+USER_AGENT="kosh %s"%version.__version__
 TIMEOUT=10 # FIXME: Configurable
 DEBUG=True
 
 class _CancelAction(Exception): pass
+class ReplayFailure(Exception): pass
 
 class urlvcr_action(object):
+  # Defaults unless action defines otherwise:
+  changes_state = True
+  use_referer = True
+
   def valid(self, state):
     raise NotImplementedError()
   def help(self, state):
@@ -43,7 +50,6 @@ class urlvcr_action(object):
     return None
   def apply(self, ui, state, params):
     raise NotImplementedError()
-  changes_state = True # Default unless action defines otherwise
 
 class action_debug(urlvcr_action):
   counter = 0
@@ -59,6 +65,7 @@ class action_debug(urlvcr_action):
     fp.close()
 
 class action_goto(urlvcr_action):
+  use_referer = False
   def valid(self, state):
     return True
   def help(self, state):
@@ -118,17 +125,19 @@ class action_back(urlvcr_action):
     return node
 
 def select_element(ui, prompt, original_elements):
+  if not len(original_elements):
+    raise _CancelAction('No elements found of matching type')
   elements = original_elements
   while True:
+    if not len(elements):
+      elements = original_elements
+    if len(elements) == 1:
+      return elements[0]
     ui._print('\n'.join(map(str,elements)))
     filter = raw_input(prompt)
     if not filter:
-      raise _CancelAction()
+      raise _CancelAction('User aborted')
     elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
-    if len(elements) == 1:
-      return elements[0]
-    if not len(elements):
-      elements = original_elements
 
 class action_link(urlvcr_action, HTMLParser.HTMLParser):
   def valid(self, state):
@@ -196,6 +205,237 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       #self._ui._cprint('dark blue', data)
       self.dom[-1].data += data
 
+class action_form(urlvcr_action, HTMLParser.HTMLParser):
+  field_actions = { # Fixme: Make these their own context aware functions in the same style the urlvcr actions are:
+      'x': 'Leave unchanged',
+      's': 'Set a specific value', # ... then add a separate 'checked' action for checkboxes
+      'u': 'Fill in with username',
+      'o': 'Fill in with old password',
+      'n': 'Fill in with new password',
+  }
+  def valid(self, state):
+    return state.state is not None
+  def help(self, state):
+    return "Fill in and submit form on current page"
+  def ask_params(self, ui, state):
+    self.update(ui, state)
+    form = select_element(ui, "Enter part of the %s name or action to fill in: "%ui._ctext('yellow', 'form'), self.forms)
+    form.editing = True
+    while True:
+      ui._print(str(form))
+      idx = raw_input('Enter %s index to edit: '%ui._ctext('dark green', 'field'))
+      if not idx:
+        if ui.confirm('Really discard form?', False):
+          raise _CancelAction('User aborted')
+        continue
+      if not idx.isdigit():
+        continue
+      try:
+        field = form.fields[int(idx)]
+      except IndexError:
+        continue
+      if type(field) != action_form.Form.Field:
+        continue
+      if field.gettype() == 'submit':
+        v = field.getvalue()
+        if not ui.confirm('Submit form via %s button to %s?'%(
+          ui._ctext('yellow', v) if v else '<UNNAMED>',
+          ui._ctext('blue', form['action'])), True
+        ):
+          continue
+        ret = {}
+        for f in form.fields:
+          if type(f) != action_form.Form.Field:
+            continue
+          t = f.gettype()
+          if t == 'submit':
+            pass # Only pressed submit button sent
+          elif t == 'radio' and not f.getchecked():
+            pass # Don't submit unchecked radio buttons
+          else: # Otherwise, add it:
+            ret[f.getname()] = f.getvalue()
+        ret[field.getname()] = field.getvalue() # submit button
+        return (form.getname(), form.getaction(), form.getmethod(), ret)
+
+      # FIXME: Most of this stuff should be moved into appropriate classes:
+      action = ui.read_nonbuffered('Enter action for this field:\n'+
+          '\n'.join(['  %s: %s'%(k,v) for (k,v) in action_form.field_actions.items()])+
+          '\n> ')
+      if action not in action_form.field_actions:
+        continue
+      if field.gettype() == 'radio':
+        if action in ['s', 'x']:
+          name = field.getname()
+          for f in form.fields:
+            if type(f) == action_form.Form.Field and f.getname() == name:
+              f.action = action
+              f.checked = False
+          field.checked = action == 's'
+      else:
+        field.action = action
+        if action == 's':
+          val = raw_input('Enter new value: ')
+          field.value = val
+        elif action in ['u','o','n']:
+          field.value = 'XXX'
+
+  def apply(self, ui, state, (form_name, form_action, form_method, form)):
+    # FIXME: Verify form exists and all fields passed in exist in it
+    # don't attempt to fill in fields in the form that weren't passed in
+    # self.update(ui, state)
+    # if error with form:
+    #   raise ReplayFailure('Something is wrong')
+    url = urlparse.urljoin(state.url, form_action)
+    if form_method.upper() == 'POST':
+      state.request(ui, url, post=form)
+    else:
+      state.request(ui, url, get=form)
+
+  class Form(dict):
+    class Field(dict):
+      def __init__(self, d, ui):
+        self.action = 'x'
+        self.checked = False
+        self._ui = ui
+        dict.__init__(self,d)
+        self.value = self['value'] if 'value' in self else ''
+      def __str__(self):
+        if self.action == 'x':
+          val = '%s"%s"'%(
+            self._ui._ctext('bright cyan', '* ') if self.getchecked() else '',
+            self._ui._ctext('magenta', self.getvalue())
+          )
+        else:
+          val = '%s: %s"%s"'%(
+            self._ui._ctext('red', self.action),
+            self._ui._ctext('bright cyan', '* ') if self.getchecked() else '',
+            self._ui._ctext('yellow', self.getvalue())
+          )
+        type = self.gettype()
+        return '%30s %-34s: %s'%(
+            '"%s"'%self._ui._ctext('dark yellow', self['name']) if 'name' in self else self._ui._ctext('reset','<UNNAMED>'),
+            '(%s)'%self._ui._ctext('dark green', type) if type else self._ui._ctext('reset','<UNSPECIFIED>'),
+            val,
+        )
+      def getname(self):
+        return self['name'] if 'name' in self else None
+      def getvalue(self):
+        if self.action == 'x':
+          return self['value'] if 'value' in self else ''
+        else:
+          return self.value
+      def getchecked(self):
+        if self.gettype() != 'radio': return None
+        if self.action == 'x':
+          return 'checked' in self and self['checked']
+        else:
+          return self.checked
+      def gettype(self):
+        return self['type'].lower() if 'type' in self else None
+
+    def __init__(self, d, ui):
+      self.fields = []
+      self.editing = False
+      self._ui = ui
+      dict.__init__(self,d)
+    def matches(self, match):
+      return 'name' in self and match.lower() in self['name'].lower() or 'action' in self and match.lower() in self['action'].lower()
+    def __str__(self):
+      return 'Form %s (action: %s)\n%s' % (
+        '"%s"'%self._ui._ctext('yellow', self['name']) if 'name' in self else '<UNNAMED>',
+        '"%s"'%self._ui._ctext('blue', self['action']) if 'action' in self else '<NO_ACTION>',
+        '\n'.join([
+          '%s\t%s'%(
+            '%i:'%idx if self.editing else '',
+            str(field)
+          ) if type(field) == action_form.Form.Field else
+          '\t%46s'%('"%s"'%self._ui._ctext('dark blue', field))
+        for (idx, field) in enumerate(self.fields) ])
+      )
+    def getname(self):
+      return self['name'] if 'name' in self else None
+    def getaction(self):
+      return self['action'] if 'action' in self else None
+    def getmethod(self):
+      return self['method'] if 'method' in self else 'GET'
+    # def __hash__(self): Considder hashing the names of the form and fields and only the names to make this identifyable even on pages where (say) the form action is dynamic
+
+  def update(self, ui, state):
+    self.reset()
+    self._ui = ui
+    # FIXME: Test and handle badly formatted HTML
+    self.feed(state.body)
+  def reset(self):
+    self.forms = []
+    self.dom = []
+    HTMLParser.HTMLParser.reset(self)
+  def handle_starttag(self, tag, attrs):
+    colour = 'dark yellow'
+    if tag == 'form':
+      self.dom.append(self.Form(attrs, self._ui))
+    elif tag == 'input':
+      if not len(self.dom):
+        self._ui._cprint('red', '<input INVALID>')
+        return
+      self.dom[-1].fields.append(action_form.Form.Field(attrs, self._ui))
+    else:
+      return
+      colour = 'grey'
+    self._ui._cprint(colour, '%i: <%s>, attrs:%s'%(len(self.dom),tag,repr(dict(attrs))))
+  def handle_endtag(self, tag):
+    colour = 'dark yellow'
+    if tag == 'form':
+      if not len(self.dom):
+        self._ui._cprint('red', '</form INVALID>')
+        return
+      form = self.dom.pop()
+      self.forms.append(form)
+    else:
+      return
+      colour = 'grey'
+    self._ui._cprint(colour, '%i: </%s>'%(len(self.dom), tag))
+  def handle_data(self, data):
+    if len(self.dom):
+      data = ' '.join(data.split()) # Normalise whitespace
+      if data:
+        self._ui._cprint('dark blue', data)
+        self.dom[-1].fields.append(data)
+
+# TODO: Inherit from a common class when just setting a parameter in the state:
+class action_agent(urlvcr_action):
+  def valid(self, state):
+    return True
+  def help(self, state):
+    return "Override User Agent string"
+  def ask_params(self, ui, state):
+    agent = raw_input("New User Agent: ")
+    if not agent:
+      raise _CancelAction('User aborted')
+    return agent
+  def apply(self, ui, state, agent):
+    state.user_agent = agent
+
+class action_referer(urlvcr_action):
+  def valid(self, state):
+    return True
+  def help(self, state):
+    return "Override Referer URL"
+  def ask_params(self, ui, state):
+    referer = raw_input("New Referer URL: ")
+    return referer if referer else None
+  def apply(self, ui, state, referer):
+    state.override_referer = referer
+
+class action_view(urlvcr_action):
+  changes_state = False
+  def valid(self, state):
+    return state.state is not None
+  def help(self, state):
+    return "View source + headers"
+  def apply(self, ui, state, params):
+    ui._cprint('bright cyan', str(state.info))
+    ui._print(state.body)
+
 class urlvcr_actions(dict):
   def display_valid_actions(self, ui, state):
     for action in sorted(self):
@@ -204,6 +444,7 @@ class urlvcr_actions(dict):
 
   def ask_next_action(self, ui, state):
     import sys
+    ui._cprint('green', str(state))
     action=''
     ui._print("-------------")
     while True:
@@ -223,10 +464,14 @@ class urlvcr_actions(dict):
 actions = urlvcr_actions({
   '#': action_debug(),
   'g': action_goto(),
-  'q': action_quit(),
-  'u': action_undo(),
+  'q': action_quit(), # Doesn't change state, OK to alter
+  'u': action_undo(), # Doesn't change state, OK to alter
   'b': action_back(),
   'l': action_link(),
+  'f': action_form(),
+  't': action_agent(),
+  'r': action_referer(),
+  'v': action_view(), # Doesn't change state, OK to alter
 })
 
 def get_actions_ask(ui, state):
@@ -260,15 +505,19 @@ class urlvcr(object):
       self.parent = parent
       self.action = action
       if self.parent:
-        self.opener = self.parent.opener
+        self.opener = self.parent.opener # XXX: May need to copy this if we change it's state
         self.url = self.parent.url
         self.info = self.parent.info
         self.body = self.parent.body
+        self.override_referer = self.parent.override_referer
+        self.user_agent = self.parent.user_agent
       else:
         self.opener = urllib2.build_opener()
         self.url = None
         self.info = None
         self.body = None
+        self.override_referer = None
+        self.user_agent = USER_AGENT
 
     def list(self):
       ret = []
@@ -283,9 +532,30 @@ class urlvcr(object):
     assert(self.state is not None)
     self.state = self.state.parent
 
-  def request(self, ui, url):
+  def request(self, ui, url, post=None, get=''):
     # FIXME: show progress:
-    request = urllib2.Request(url)
+    import urllib
+    if post:
+      post = urllib.urlencode(post)
+    if get:
+      get = '?'+urllib.urlencode(get)
+
+    ui._cprint('bright cyan', 'Navigating to: %s%s'%(url,get))
+    request = urllib2.Request(url+get, post)
+
+    referer = None
+    if self.state.override_referer:
+      referer = self.state.override_referer
+    elif actions[self.state.action[0]].use_referer and self.state.parent is not None:
+        referer = self.state.parent.url
+    if referer is not None:
+      ui._cprint('cyan', 'Referer: %s'%referer)
+      request.add_header('Referer', referer)
+
+    if self.state.user_agent:
+      ui._cprint('cyan', 'User-agent: %s'%self.state.user_agent)
+      request.add_header('User-agent', self.state.user_agent)
+
     try:
       try:
         response = self.state.opener.open(request, timeout=TIMEOUT)
@@ -293,11 +563,11 @@ class urlvcr(object):
         # Python 2.5 does not support a timeout throught urllib2:
         socket.setdefaulttimeout(TIMEOUT)
         response = self.state.opener.open(request)
+    except urllib2.HTTPError, e:
+      ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
+      raise
     except urllib2.URLError, e:
-      if hasattr(e, 'reason'):
-        ui._cprint('red', 'Failed to reach server: %s'%e.reason)
-      elif hasattr(e, 'code'):
-        ui._cprint('red', 'HTTP status code: %s'%e.code)
+      ui._cprint('red', 'Failed to reach server: %s'%e.reason)
       raise
     except socket.timeout:
       ui._cprint('red', 'Failed to reach server: timeout')
@@ -332,7 +602,7 @@ def main(ui):
     apply_action(ui, state, action)
     #script.append(action)
     #print action
-    print state
+    #print state
 
 
 if __name__ == '__main__':
