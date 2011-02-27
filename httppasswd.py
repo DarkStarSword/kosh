@@ -117,6 +117,19 @@ class action_back(urlvcr_action):
       node = node.parent
     return node
 
+def select_element(ui, prompt, original_elements):
+  elements = original_elements
+  while True:
+    ui._print('\n'.join(map(str,elements)))
+    filter = raw_input(prompt)
+    if not filter:
+      raise _CancelAction()
+    elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
+    if len(elements) == 1:
+      return elements[0]
+    if not len(elements):
+      elements = original_elements
+
 class action_link(urlvcr_action, HTMLParser.HTMLParser):
   def valid(self, state):
     return state.state is not None
@@ -124,27 +137,16 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     return "Follow link on current page"
   def ask_params(self, ui, state):
     self.update(ui, state)
-    links = self.links
     while True:
-      ui._print('\n'.join(
-        map(str,links)
-        ))
-      filter = raw_input("Enter part of the link to follow: ").lower()
-      if not filter:
-        raise _CancelAction()
-      links = [l for l in links if filter in l.data.lower()]
-      if len(links) == 1:
-        link = links.pop()
-        try:
-          url = link['href']
-        except KeyError:
-          ui._cprint("red", 'No HREF attribute in link')
-        else:
-          url = urlparse.urljoin(state.url, url)
-          if ui.confirm('Follow link "%s" to %s'%(ui._ctext('yellow', link.data), ui._ctext('blue', url)), True):
-            return link.data
-      if not len(links):
-        links = self.links
+      link = select_element(ui, "Enter part of the link to follow: ", self.links)
+      try:
+        url = link['href']
+      except KeyError:
+        ui._cprint("red", 'No HREF attribute in link')
+      else:
+        url = urlparse.urljoin(state.url, url)
+        if ui.confirm('Follow link "%s" to %s'%(ui._ctext('yellow', link.data), ui._ctext('blue', url)), True):
+          return link.data
   def apply(self, ui, state, link):
     self.update(ui, state)
     links = [l for l in self.links if link in l.data]
@@ -154,12 +156,14 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     state.request(ui, url)
 
   class Link(dict):
-    data = ''
     def __init__(self, d, ui):
+      self.data = ''
       self._ui = ui
       dict.__init__(self,d)
+    def matches(self, match):
+      return match.lower() in self.data.lower()
     def __str__(self):
-      return "%30s -> %s"%(
+      return "%50s -> %s"%(
         '"%s"'%self._ui._ctext('yellow', self.data) if self.data else '<NO TEXT LINK>',
         self._ui._ctext('blue', self['href']) if 'href' in self else '<NO URL>'
       )
