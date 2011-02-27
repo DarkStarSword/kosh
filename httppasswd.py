@@ -175,10 +175,8 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
           return link.data
   def apply(self, ui, state, link):
     self.update(ui, state)
-    links = [l for l in self.links if link in l.data]
-    if len(links) != 1:
-      raise ReplayFailure('%i links matching "%s"'%(len(links), link))
-    url = urlparse.urljoin(state.url, links[0]['href'])
+    link = find_element(self.links, [link])
+    url = urlparse.urljoin(state.url, link['href'])
     state.request(ui, url)
 
   class Link(dict):
