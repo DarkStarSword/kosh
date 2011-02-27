@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.6
+#!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
 import pexpect
@@ -404,14 +404,19 @@ def update_config(ui, filename, oldpass, newpass):
     try:
       # FIXME: Permissions?
       # FIXME: Symbolic links?
-      with tempfile.NamedTemporaryFile(mode='wb', delete=False,
+      fp = tempfile.NamedTemporaryFile(mode='wb',
           prefix=os.path.basename(filename),
-          dir=os.path.dirname(filename)) as fp:
+          dir=os.path.dirname(filename))
+      # python2.5 does not have delete parameter:
+      fp.unlink = lambda *args: None
+      try:
         fp.writelines(modified)
         fp.close()
         if os.path.exists(filename):
           os.rename(filename, filename+'~')
         os.rename(fp.name, filename)
+      finally:
+        fp.close()
     except IOError, e:
       raise PasswordChangeFailure(e)
 
