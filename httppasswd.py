@@ -125,12 +125,13 @@ class action_back(urlvcr_action):
     return node
 
 def select_element(ui, prompt, original_elements):
-  if not len(original_elements):
+  unfiltered_elements = [ x for x in original_elements if x.selectable() ]
+  if not len(unfiltered_elements):
     raise _CancelAction('No elements found of matching type')
-  elements = original_elements
+  elements = unfiltered_elements
   while True:
     if not len(elements):
-      elements = original_elements
+      elements = unfiltered_elements
     if len(elements) == 1:
       return elements[0]
     ui._print('\n'.join(map(str,elements)))
@@ -169,11 +170,16 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       self.data = ''
       self._ui = ui
       dict.__init__(self,d)
+    def selectable(self):
+      if not 'href' in self:
+        self._ui._cprint('dark red', 'filtering out link with no URL')
+        return False
+      return True
     def matches(self, match):
       return match.lower() in self.data.lower()
     def __str__(self):
       return "%50s -> %s"%(
-        '"%s"'%self._ui._ctext('yellow', self.data) if self.data else '<NO TEXT LINK>',
+        '"%s"'%self._ui._ctext('yellow', self.data) if self.data else self._ui._ctext('reset', '<NO TEXT LINK>'),
         self._ui._ctext('blue', self['href']) if 'href' in self else '<NO URL>'
       )
 
@@ -338,6 +344,15 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       self.editing = False
       self._ui = ui
       dict.__init__(self,d)
+    def selectable(self):
+      if not 'action' in self:
+        self._ui._cprint('red', 'filtering out form with missing action')
+        return False
+      for field in self.fields:
+        if type(field) == action_form.Form.Field and field.gettype() == 'submit':
+          return True
+      self._ui._cprint('red', 'filtering out form with no submit buttons')
+      return False
     def matches(self, match):
       return 'name' in self and match.lower() in self['name'].lower() or 'action' in self and match.lower() in self['action'].lower()
     def __str__(self):
@@ -381,7 +396,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     else:
       return
       colour = 'grey'
-    self._ui._cprint(colour, '%i: <%s>, attrs:%s'%(len(self.dom),tag,repr(dict(attrs))))
+    #self._ui._cprint(colour, '%i: <%s>, attrs:%s'%(len(self.dom),tag,repr(dict(attrs))))
   def handle_endtag(self, tag):
     colour = 'dark yellow'
     if tag == 'form':
@@ -392,13 +407,18 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       self.forms.append(form)
     else:
       return
-      colour = 'grey'
-    self._ui._cprint(colour, '%i: </%s>'%(len(self.dom), tag))
+      #colour = 'grey'
+    #self._ui._cprint(colour, '%i: </%s>'%(len(self.dom), tag))
   def handle_data(self, data):
     if len(self.dom):
       data = ' '.join(data.split()) # Normalise whitespace
       if data:
-        self._ui._cprint('dark blue', data)
+        #self._ui._cprint('dark blue', data)
+        try:
+          if type(self.dom[-1].fields[-1]) == str:
+            self.dom[-1].fields[-1] += ' '+data
+            return
+        except IndexError: pass
         self.dom[-1].fields.append(data)
 
 # TODO: Inherit from a common class when just setting a parameter in the state:
@@ -501,9 +521,12 @@ class urlvcr(object):
   state = None
 
   class urlstate(object):
-    def __init__(self, parent, action):
+    def __init__(self, parent, action, username=None, oldpass=None, newpass=None):
       self.parent = parent
       self.action = action
+      self.username = username
+      self.oldpass = oldpass
+      self.newpass = newpass
       if self.parent:
         self.opener = self.parent.opener # XXX: May need to copy this if we change it's state
         self.url = self.parent.url
