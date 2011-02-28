@@ -254,11 +254,15 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     form.editing = True
     while True:
       ui._print(str(form))
-      idx = raw_input('Enter %s index to edit: '%ui._ctext('dark green', 'field'))
+      idx = raw_input("Enter %s index to edit, or 's' to submit: "%ui._ctext('dark green', 'field'))
       if not idx:
         if ui.confirm('Really discard form?', False):
           raise _CancelAction('User aborted')
         continue
+      if idx.lower() == 's':
+        if ui.confirm('Really submit form to %s *without* using submit button?'%(
+          ui._ctext('blue', form['action'])), False):
+          return self.form.submit(None)
       if not idx.isdigit():
         continue
       try:
@@ -274,23 +278,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           ui._ctext('blue', form['action'])), True
         ):
           continue
-        ret = {}
-        for f in form.fields:
-          if type(f) != action_form.Form.Field:
-            continue
-          t = f.gettype()
-          if t == 'submit':
-            pass # Only pressed submit button sent
-          elif t == 'radio' and not f.getchecked():
-            pass # Don't submit unchecked radio buttons
-          else: # Otherwise, add it:
-            action = f.action
-            if action == 's':
-              ret[f.getname()] = (action, f.getvalue())
-            elif action in ['u', 'o', 'n']:
-              ret[f.getname()] = (action, None)
-        ret[field.getname()] = ('s', field.getvalue()) # submit button
-        return (form.getname(), form.getaction(), form.getmethod(), ret)
+        return self.form.submit(field)
 
       # FIXME: Most of this stuff should be moved into appropriate classes:
       action = ui.read_nonbuffered('Enter action for this field:\n'+
@@ -423,11 +411,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       if not 'action' in self:
         self._ui._cprint('red', 'filtering out form with missing action')
         return False
-      for field in self.fields:
-        if type(field) == action_form.Form.Field and field.gettype() == 'submit':
-          return True
-      self._ui._cprint('red', 'filtering out form with no submit buttons')
-      return False
+      return True
     def matches(self, match):
       return 'name' in self and match.lower() in self['name'].lower() or 'action' in self and match.lower() in self['action'].lower()
     def __str__(self):
@@ -449,11 +433,29 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     def getmethod(self):
       return self['method'] if 'method' in self else 'GET'
     # def __hash__(self): Considder hashing the names of the form and fields and only the names to make this identifyable even on pages where (say) the form action is dynamic
+    def submit(self, submit_button=None):
+      ret = {}
+      for f in self.fields:
+        if type(f) != action_form.Form.Field:
+          continue
+        t = f.gettype()
+        if t == 'submit':
+          pass # Only pressed submit button sent
+        elif t == 'radio' and not f.getchecked():
+          pass # Don't submit unchecked radio buttons
+        else: # Otherwise, add it:
+          action = f.action
+          if action == 's':
+            ret[f.getname()] = (action, f.getvalue())
+          elif action in ['u', 'o', 'n']:
+            ret[f.getname()] = (action, None)
+      if submit_button is not None:
+        ret[submit_button.getname()] = ('s', submit_button.getvalue()) # submit button
+      return (self.getname(), self.getaction(), self.getmethod(), ret)
 
   def update(self, ui, state):
     self.reset()
     self._ui = ui
-    # FIXME: Test and handle badly formatted HTML
     food = state.body
     while True:
       try:
