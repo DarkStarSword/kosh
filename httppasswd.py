@@ -276,7 +276,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         continue
       if idx.lower() == 's':
         if ui.confirm('Really submit form to %s *without* using submit button?'%(
-          ui._ctext('blue', form['action'])), False):
+          ui._ctext('blue', form.getaction() if form.getaction() else state.url)), False):
           return form.submit(None)
       if idx.lower() == 'a':
         name = raw_input('New field name: ')
@@ -299,7 +299,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         v = field.getvalue()
         if not ui.confirm('Submit form via %s button to %s?'%(
           ui._ctext('yellow', v) if v else '<UNNAMED>',
-          ui._ctext('blue', form['action'])), True
+          ui._ctext('blue', form.getaction() if form.getaction() else state.url)), True
         ): continue
         return form.submit(field)
 
@@ -783,6 +783,20 @@ class action_save(urlvcr_action):
       if fp is not None:
         fp.close()
 
+class action_validate(urlvcr_action):
+  def valid(self, state):
+    return state.state is not None and state.body is not None
+  def help(self, state):
+    return "Validate page by matching arbitrary string"
+  def ask_params(self, ui, state):
+    match = raw_input('String to match: ')
+    if not match:
+      raise _CancelAction('User aborted')
+    return match
+  def apply(self, ui, state, match):
+    if match not in state.body:
+      raise ReplayFailure('Validation failed: unable to match "%s"'%match)
+
 class urlvcr_actions(dict):
   def display_valid_actions(self, ui, state):
     for action in sorted(self):
@@ -817,11 +831,12 @@ actions = urlvcr_actions({
   'f': action_form(),
   't': action_agent(),
   'R': action_referer(),
-  'v': action_view(), # Doesn't change state, OK to alter
+  'x': action_view(), # Doesn't change state, OK to alter
   'a': action_auth(),
   'r': action_refresh(),
   'm': action_frame(),
   'w': action_save(), # Doesn't change state, OK to alter
+  'v': action_validate(),
   #'m': action_meta(), # Usually involked automatically
 })
 
@@ -841,10 +856,16 @@ def apply_action(ui, state, action):
     state.push(action)
   try:
     a.apply(ui, state, action[1])
+  except ReplayFailure, e:
+    ui._cprint('red', 'Replay Failure, undoing last action: %s'%e)
+    assert(a.changes_state)
+    state.pop()
+    raise
   except urllib2.URLError, socket.timeout:
     assert(a.changes_state)
     ui._cprint('dark red', 'Unhandled URLError, undoing last action')
     state.pop()
+    raise ReplayFailure('Unhandled URLError')
 
 class urlvcr(object):
   """
@@ -998,6 +1019,7 @@ def main(ui, script=None, username=None, oldpass=None, newpass=None):
   import json
   import base64
   state = urlvcr(username, oldpass, newpass)
+  interactive = script == None
   # If replaying a script, use get_actions_from_script
   if script:
     script = json.loads(script)
@@ -1006,7 +1028,13 @@ def main(ui, script=None, username=None, oldpass=None, newpass=None):
   else:
     action_seq = get_actions_ask(ui, state)
   for action in action_seq:
-    apply_action(ui, state, action)
+    try:
+      apply_action(ui, state, action)
+    except ReplayFailure, e:
+      if interactive:
+        ui._cprint('dark red', 'continuing since interactive...')
+        continue
+      raise
   script = state.getscript()
   return json.dumps(script)
 
