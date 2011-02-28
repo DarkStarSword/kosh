@@ -84,19 +84,29 @@ class viCommandBar(urwid.WidgetWrap):
     self._container.set_focus('footer')
 
   def keypress(self, size, key):
+    original_mode = self._mode
+    if original_mode == 'NORMAL':
+      key = self._container.keypress(size, key)
+      #self.update_status(repr(key))
+
     km = self.KEYMAP[self._mode]
     if key in km:
       f = getattr(self, km[key])
       if f.__code__.co_argcount == 3:
         return f(size, key)
       return f()
+
+    if original_mode == 'NORMAL':
+      # Already allowed child widgets to process this
+      return key
     try:
-      ret = self._container.keypress(size, key)
+      key = self._container.keypress(size, key)
       if self._mode == 'SEARCH' and self.variables['incsearch']:
         self.incsearch()
-      return ret
+      return key
     except viStatusEdit.Cancel:
       self.normal_mode()
+      return None
 
   def exec_command(self):
     args = self._status.get_edit_text().split(None, 1)
