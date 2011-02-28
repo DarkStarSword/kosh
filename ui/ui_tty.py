@@ -75,7 +75,13 @@ class ui_tty(object):
         ui_tty._print(prompt.encode('latin-1'), end='')
     old = ui_tty.set_cbreak(fp)
     try:
-      ch = fp.read(1)
+      while True:
+        try:
+          ch = fp.read(1)
+        except IOError, e:
+          if e.args[0] == 4: continue # Interrupted system call
+          raise
+        break
     finally:
       ui_tty.restore_cbreak(old, fp)
     if echo:
