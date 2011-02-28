@@ -139,17 +139,33 @@ def select_element(ui, prompt, original_elements):
     if len(elements) == 1:
       return elements[0]
     ui._print('\n'.join(map(str,elements)))
+    #ui._print('\n'.join([ '%3i: %s'%(i,str(x)) for (i,x) in enumerate(elements) ]))
     filter = raw_input(prompt)
     if not filter:
       raise _CancelAction('User aborted')
-    elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
+    #if filter.isdigit():
+    #  pass
+    if filter.startswith('"') and filter.endswith('"') and len(filter) > 1:
+      filter = filter[1:-1]
+      elements = [ x for x in elements if hasattr(x, 'exact_matches') and x.exact_matches(filter) ]
+    else:
+      elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
 
 def find_element(original_elements, filters):
   elements = [ x for x in original_elements if x.selectable() ]
   if not len(elements):
     raise ReplayFailure('No selectable elements found of matching type')
   for filter in filters:
-    elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
+    #elements = [ x for x in elements if hasattr(x, 'matches') and x.matches(filter) ]
+    elements = [ x for x in elements
+        if (
+          hasattr(x, 'exact_matches')
+          and x.exact_matches(filter)
+        ) or (
+          not hasattr(x, 'exact_matches')
+          and hasattr(x, 'matches')
+          and x.matches(filter)
+        )]
   if not len(elements):
     raise ReplayFailure('All selectable elements of matching type were filtered')
   if len(elements) > 1:
@@ -165,15 +181,11 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     self.update(ui, state)
     while True:
       link = select_element(ui, "Enter part of the link to follow: ", self.links)
-      try:
-        url = link['href']
-      except KeyError:
-        ui._cprint("red", 'No HREF attribute in link')
-      else:
-        url = urlparse.urljoin(state.url, url)
-        if ui.confirm('Follow link "%s" to %s'%(ui._ctext('yellow', link.data), ui._ctext('blue', url)), True):
-          return link.data
-        raise _CancelAction('User aborted')
+      url = link['href']
+      url = urlparse.urljoin(state.url, url)
+      if ui.confirm('Follow link "%s" to %s'%(ui._ctext('yellow', link.data), ui._ctext('blue', url)), True):
+        return link.data
+      raise _CancelAction('User aborted')
   def apply(self, ui, state, link):
     self.update(ui, state)
     link = find_element(self.links, [link])
@@ -192,6 +204,8 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       return True
     def matches(self, match):
       return match.lower() in self.data.lower()
+    def exact_matches(self, match):
+      return match == self.data
     def __str__(self):
       return "%50s -> %s"%(
         '"%s"'%self._ui._ctext('yellow', self.data) if self.data else self._ui._ctext('reset', '<NO TEXT LINK>'),
@@ -205,11 +219,12 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     while True:
       try:
         self.feed(food)
+        self.close()
       except HTMLParser.HTMLParseError, e:
         self._ui._cprint('red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
-        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
         HTMLParser.HTMLParser.reset(self) # Reset count
         continue
       break
@@ -423,15 +438,15 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       self._ui = ui
       dict.__init__(self,d)
     def selectable(self):
-      if not 'action' in self:
-        self._ui._cprint('red', 'filtering out form with missing action')
-        return False
       return True
     def matches(self, match):
-      return 'name' in self and match.lower() in self['name'].lower() or 'action' in self and match.lower() in self['action'].lower()
+      return 'name' in self and match.lower() in self['name'].lower() \
+          or 'action' in self and match.lower() in self['action'].lower() \
+          or 'id' in self and match.lower() in self['id'].lower()
     def __str__(self):
-      return 'Form %s (action: %s)\n%s' % (
+      return 'Form %s %s (action: %s)\n%s' % (
         '"%s"'%self._ui._ctext('yellow', self['name']) if 'name' in self else '<UNNAMED>',
+        '"%s"'%self._ui._ctext('dark yellow', self['id']) if 'id' in self else '<NO_ID>',
         '"%s"'%self._ui._ctext('blue', self['action']) if 'action' in self else '<NO_ACTION>',
         '\n'.join([
           '%s\t%s'%(
@@ -476,11 +491,12 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     while True:
       try:
         self.feed(food)
+        self.close()
       except HTMLParser.HTMLParseError, e:
         self._ui._cprint('red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
-        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
         HTMLParser.HTMLParser.reset(self) # Reset count
         continue
       break
@@ -497,9 +513,9 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         self._ui._cprint('red', '<input INVALID>')
         return
       self.dom[-1].fields.append(action_form.Form.Field(attrs, self._ui))
-    else:
-      return
-      colour = 'grey'
+    #else:
+      #return
+      #colour = 'grey'
     #self._ui._cprint(colour, '%i: <%s>, attrs:%s'%(len(self.dom),tag,repr(dict(attrs))))
   def handle_endtag(self, tag):
     colour = 'dark yellow'
@@ -509,8 +525,8 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         return
       form = self.dom.pop()
       self.forms.append(form)
-    else:
-      return
+    #else:
+      #return
       #colour = 'grey'
     #self._ui._cprint(colour, '%i: </%s>'%(len(self.dom), tag))
   def handle_data(self, data):
@@ -582,6 +598,7 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
     while True:
       try:
         self.feed(food)
+        self.close()
       except HTMLParser.HTMLParseError, e:
         if self._ui:
           self._ui._cprint('red', 'HTMLParseError: %s'%e)
@@ -589,7 +606,7 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
           print 'HTMLParseError: %s'%e
         lineno = e.lineno
         offset = e.offset
-        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
         HTMLParser.HTMLParser.reset(self) # Reset count
         continue
       break
@@ -727,11 +744,12 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
     while True:
       try:
         self.feed(food)
+        self.close()
       except HTMLParser.HTMLParseError, e:
         self._ui._cprint('red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
-        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
         HTMLParser.HTMLParser.reset(self) # Reset count
         continue
       break
@@ -773,13 +791,12 @@ class urlvcr_actions(dict):
 
   def ask_next_action(self, ui, state):
     import sys
-    ui._cprint('green', str(state))
-    action=''
-    ui._print("-------------")
     while True:
+      ui._cprint('green', str(state))
+      ui._print("-------------")
       ui._print("Enter action:")
       actions.display_valid_actions(ui, state)
-      action = ui.read_nonbuffered("> ").lower()
+      action = ui.read_nonbuffered("> ")
       if action not in self or not self[action].valid(state):
         ui._print("%s: Invalid action from current state\n"%repr(action))
         continue
