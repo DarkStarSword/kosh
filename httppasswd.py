@@ -201,11 +201,18 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
   def update(self, ui, state):
     self.reset()
     self._ui = ui
-    # FIXME: Test and handle badly formatted HTML
-    try:
-      self.feed(state.body)
-    except HTMLParser.HTMLParseError, e:
-      self._ui._cprint('red', 'HTMLParseError: %s'%e)
+    food = state.body
+    while True:
+      try:
+        self.feed(food)
+      except HTMLParser.HTMLParseError, e:
+        self._ui._cprint('red', 'HTMLParseError: %s'%e)
+        lineno = e.lineno
+        offset = e.offset
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        HTMLParser.HTMLParser.reset(self) # Reset count
+        continue
+      break
   def reset(self):
     self.links = []
     self.dom = []
@@ -447,10 +454,18 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     self.reset()
     self._ui = ui
     # FIXME: Test and handle badly formatted HTML
-    try:
-      self.feed(state.body)
-    except HTMLParser.HTMLParseError, e:
-      self._ui._cprint('red', 'HTMLParseError: %s'%e)
+    food = state.body
+    while True:
+      try:
+        self.feed(food)
+      except HTMLParser.HTMLParseError, e:
+        self._ui._cprint('red', 'HTMLParseError: %s'%e)
+        lineno = e.lineno
+        offset = e.offset
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        HTMLParser.HTMLParser.reset(self) # Reset count
+        continue
+      break
   def reset(self):
     self.forms = []
     self.dom = []
@@ -545,13 +560,21 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
   def update(self, ui, state):
     self.reset()
     self._ui = ui
-    try:
-      self.feed(state.body)
-    except HTMLParser.HTMLParseError, e:
-      if self._ui:
-        self._ui._cprint('red', 'HTMLParseError: %s'%e)
-      else:
-        print 'HTMLParseError: %s'%e
+    food = state.body
+    while True:
+      try:
+        self.feed(food)
+      except HTMLParser.HTMLParseError, e:
+        if self._ui:
+          self._ui._cprint('red', 'HTMLParseError: %s'%e)
+        else:
+          print 'HTMLParseError: %s'%e
+        lineno = e.lineno
+        offset = e.offset
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        HTMLParser.HTMLParser.reset(self) # Reset count
+        continue
+      break
   def reset(self):
     self.refresh = None
     HTMLParser.HTMLParser.reset(self)
@@ -682,10 +705,18 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
   def update(self, ui, state):
     self.reset()
     self._ui = ui
-    try:
-      self.feed(state.body)
-    except HTMLParser.HTMLParseError, e:
-      self._ui._cprint('red', 'HTMLParseError: %s'%e)
+    food = state.body
+    while True:
+      try:
+        self.feed(food)
+      except HTMLParser.HTMLParseError, e:
+        self._ui._cprint('red', 'HTMLParseError: %s'%e)
+        lineno = e.lineno
+        offset = e.offset
+        food = '\n'.join(food.split('\n')[lineno-1:])[offset:]
+        HTMLParser.HTMLParser.reset(self) # Reset count
+        continue
+      break
   def reset(self):
     self.refresh = None
     self.frames = []
