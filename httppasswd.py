@@ -102,7 +102,7 @@ class action_undo(urlvcr_action):
   def valid(self, state):
     return state.state is not None
   def help(self, state):
-    return "Undo last action (DANGEROUS: Server may have tracked state)"
+    return "Undo last action (Deletes action entirely. Caution advised)"
   def apply(self, ui, state, params):
     state.pop()
 
@@ -173,6 +173,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
         url = urlparse.urljoin(state.url, url)
         if ui.confirm('Follow link "%s" to %s'%(ui._ctext('yellow', link.data), ui._ctext('blue', url)), True):
           return link.data
+        raise _CancelAction('User aborted')
   def apply(self, ui, state, link):
     self.update(ui, state)
     link = find_element(self.links, [link])
@@ -560,9 +561,160 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
       if 'http-equiv' in attrs and 'content' in attrs and attrs['http-equiv'].lower() == 'refresh':
         # FIXME: Python 2.5 will not unescape attrs for us, so this won't work
         try:
-          self.refresh = [ x for x in attrs['content'].split() if x.startswith('url=') ][0][4:].strip("'")
+          #self.refresh = [ x for x in attrs['content'].split() if x.startswith('url=') ][0][4:].strip("'")
+          self.refresh = attrs['content'].lower().partition('url=')[2].strip("'")
         except IndexError:
           self._ui._cprint('red', 'Error parsing meta refresh tag') # FIXME: if called from display_valid_actions, ui==None
+
+class action_auth(urlvcr_action):
+  def valid(self, state):
+    return state.state is not None and state.state.info is not None \
+        and 'www-authenticate' in state.state.info
+  def help(self, state):
+    return "Authenticate with basic or digest authentication in the current realm"
+  def ask_params(self, ui, state):
+    header = state.info['www-authenticate']
+    if not header.startswith('Basic realm="'):
+      ui._cprint('red', "Don't know how to handle authentication type %s"%header)
+      raise _CancelAction
+    try:
+      realm = header.split('"')[1]
+    except IndexError:
+      ui._cprint('red', "Error parsing www-authenticate header")
+      raise _CancelAction
+    import getpass # FIXME: UI
+    if ui.confirm('Override username?', False):
+      username = ('s', raw_input('Username: '))
+    else:
+      username = ('u', None)
+      if state.username is None:
+        state.username = raw_input('Enter Username: ')
+    if ui.confirm('Override password?', False):
+      password = ('s', getpass.getpass('Password: '))
+    elif ui.confirm('Authenticate with old password?', True):
+      password = ('o', None)
+      if state.oldpass is None:
+        state.oldpass = getpass.getpass('Enter OLD Password: ')
+    else:
+      password = ('n', None)
+      if state.newpass is None:
+        state.newpass = getpass.getpass('Enter NEW Password: ')
+    url = state.url # What is the URL supposed to be?
+    # FIXME: This will fail if authentication is on root directory:
+    url = url.rsplit('/',1)[0] # Directory?
+    return ('basic', realm, url, username, password)
+
+  def apply(self, ui, state,
+            (auth_type, realm, url,
+             (username_type, username_override),
+             (password_type, password_override))):
+    if auth_type != 'basic':
+      raise ReplayFailure('only basic authentication supported for now')
+    pwmgr = urllib2.HTTPPasswordMgr()
+    if username_type == 'u':
+      username = state.username
+    elif username_type == 's':
+      username = username_override
+    else:
+      raise ReplayFailure('Invalid username type')
+
+    if password_type == 'o':
+      password = state.oldpass
+    elif password_type == 'n':
+      password = state.newpass
+    elif password_type == 's':
+      password = password_override
+    else:
+      raise ReplayFailure('Invalid password type')
+    pwmgr.add_password(realm, url, username, password)
+    authmgr = urllib2.HTTPBasicAuthHandler(pwmgr)
+    # FIXME: This won't be undone properly, and will mess up if we auth multiple times:
+    state.handlers.append(authmgr)
+    state.opener = urllib2.build_opener(*state.handlers)
+    ui._cprint('yellow', "Authentication credentials set - you probably want to refresh now ('r').")
+
+class action_refresh(urlvcr_action):
+  def valid(self, state):
+    return state.state is not None and state.url
+  def help(self, state):
+    return "Refresh the current page"
+  def apply(self, ui, state, params):
+    state.request(ui, state.url)
+
+class action_frame(urlvcr_action, HTMLParser.HTMLParser):
+  def valid(self, state):
+    return state.state is not None and state.body is not None
+  def help(self, state):
+    return "Enter frame on current page"
+  def ask_params(self, ui, state):
+    self.update(ui, state)
+    while True:
+      frame = select_element(ui, "Enter part of the frame name or URL to enter: ", self.frames)
+      name = frame['name']
+      src = frame['src']
+      url = urlparse.urljoin(state.url, src)
+      if ui.confirm('Enter frame "%s" to %s'%(ui._ctext('yellow', name), ui._ctext('blue', url)), True):
+        return (name, src)
+      raise _CancelAction('User aborted')
+  def apply(self, ui, state, (name, src)):
+    self.update(ui, state)
+    frame = find_element(self.frames, [name, src])
+    url = urlparse.urljoin(state.url, frame['src'])
+    state.request(ui, url)
+
+  class Frame(dict):
+    def __init__(self, d, ui):
+      self._ui = ui
+      dict.__init__(self,d)
+    def selectable(self):
+      if 'src' not in self:
+        self._ui._cprint('dark red', 'filtering out frame with no SRC')
+        return False
+      return True
+    def matches(self, match):
+      return 'name' in self and match.lower() in self['name'].lower() or 'src' in self and match.lower() in self['src'].lower()
+    def __str__(self):
+      return '%30s : %s' % (
+        '"%s"'%self._ui._ctext('yellow', self['name']) if 'name' in self else self._ui.ctext('reset', '<UNNAMED>'),
+        '"%s"'%self._ui._ctext('blue', self['src']) if 'src' in self else '<NO_SRC>',
+      )
+
+  def update(self, ui, state):
+    self.reset()
+    self._ui = ui
+    try:
+      self.feed(state.body)
+    except HTMLParser.HTMLParseError, e:
+      self._ui._cprint('red', 'HTMLParseError: %s'%e)
+  def reset(self):
+    self.refresh = None
+    self.frames = []
+    HTMLParser.HTMLParser.reset(self)
+  def handle_starttag(self, tag, attrs):
+    if tag == 'frame':
+      self.frames.append(action_frame.Frame(attrs, self._ui))
+
+class action_save(urlvcr_action):
+  changes_state = False
+  def valid(self, state):
+    return state.state is not None and state.body is not None
+  def help(self, state):
+    return "Save the current page to a file"
+  def ask_params(self, ui, state):
+    filename = raw_input('Filename: ')
+    if not filename:
+      raise _CancelAction('User aborted')
+    return filename
+  def apply(self, ui, state, filename):
+    fp=None
+    try:
+      fp = open(filename,'wb')
+      fp.write(state.body)
+    except Exception,e:
+      self._ui._cprint('red', 'Exception while saving file: %s'%e)
+    finally:
+      if fp is not None:
+        fp.close()
 
 class urlvcr_actions(dict):
   def display_valid_actions(self, ui, state):
@@ -598,8 +750,12 @@ actions = urlvcr_actions({
   'l': action_link(),
   'f': action_form(),
   't': action_agent(),
-  'r': action_referer(),
+  'R': action_referer(),
   'v': action_view(), # Doesn't change state, OK to alter
+  'a': action_auth(),
+  'r': action_refresh(),
+  'm': action_frame(),
+  'w': action_save(), # Doesn't change state, OK to alter
   #'m': action_meta(), # Usually involked automatically
 })
 
@@ -641,6 +797,7 @@ class urlvcr(object):
       self.action = action
       if self.parent:
         self.cookies = self.parent.cookies # XXX Likely need to copy this and create new opener, maybe just copy when doing request
+        self.handlers = self.parent.handlers
         self.opener = self.parent.opener # XXX: May need to copy this if we change it's state
         self.url = self.parent.url
         self.info = self.parent.info
@@ -649,7 +806,8 @@ class urlvcr(object):
         self.user_agent = self.parent.user_agent
       else:
         self.cookies = cookielib.CookieJar()
-        self.opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.cookies))
+        self.handlers = [urllib2.HTTPCookieProcessor(self.cookies)]
+        self.opener = urllib2.build_opener(*self.handlers)
         self.url = None
         self.info = None
         self.body = None
@@ -707,8 +865,12 @@ class urlvcr(object):
           socket.setdefaulttimeout(TIMEOUT)
           response = self.state.opener.open(request)
       except urllib2.HTTPError, e:
-        ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
-        raise
+        if e.code == 401:
+          ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
+          response = e
+        else:
+          ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
+          raise
       except (urllib2.URLError, socket.timeout), e:
         if hasattr(e, 'reason'):
           ui._cprint('red', 'Failed to reach server: %s'%e.reason)
@@ -719,7 +881,11 @@ class urlvcr(object):
           continue
         raise
       break
-    self.state.url = response.geturl()
+    try:
+      self.state.url = response.geturl()
+    except AttributeError:
+      ui._cprint('red', 'Response did not contain a URL, assuming we went to the requested URL...')
+      self.state.url = url
     self.state.info = response.info()
     self.state.body = ''
     tries = TRIES
