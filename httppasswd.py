@@ -254,7 +254,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     form.editing = True
     while True:
       ui._print(str(form))
-      idx = raw_input("Enter %s index to edit, or 's' to submit: "%ui._ctext('dark green', 'field'))
+      idx = raw_input("Enter %s index to edit, 's' to submit, 'a' to add an additional value: "%ui._ctext('dark green', 'field'))
       if not idx:
         if ui.confirm('Really discard form?', False):
           raise _CancelAction('User aborted')
@@ -262,11 +262,20 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       if idx.lower() == 's':
         if ui.confirm('Really submit form to %s *without* using submit button?'%(
           ui._ctext('blue', form['action'])), False):
-          return self.form.submit(None)
+          return form.submit(None)
+      if idx.lower() == 'a':
+        name = raw_input('New field name: ')
+        if not name: continue
+        # FIXME: Verify field not already in form
+        field = action_form.Form.Field({'name': name, 'value': ''}, ui)
+        field.additional = True
+        form.fields.append(field)
+        idx = str(len(form.fields) - 1)
       if not idx.isdigit():
         continue
+      idx = int(idx)
       try:
-        field = form.fields[int(idx)]
+        field = form.fields[idx]
       except IndexError:
         continue
       if type(field) != action_form.Form.Field:
@@ -276,9 +285,8 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         if not ui.confirm('Submit form via %s button to %s?'%(
           ui._ctext('yellow', v) if v else '<UNNAMED>',
           ui._ctext('blue', form['action'])), True
-        ):
-          continue
-        return self.form.submit(field)
+        ): continue
+        return form.submit(field)
 
       # FIXME: Most of this stuff should be moved into appropriate classes:
       action = ui.read_nonbuffered('Enter action for this field:\n'+
@@ -310,6 +318,8 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
             state.oldpass = getpass.getpass('Enter OLD Password: ')
           elif action == 'n' and (state.newpass is None or ui.confirm('Reset NEW password?', False)):
             state.newpass = getpass.getpass('Enter NEW Password: ')
+        elif action == 'x' and field.additional:
+          del form.fields[idx]
 
   def apply(self, ui, state, (form_name, form_action, form_method, form_script)):
     self.update(ui, state)
@@ -333,9 +343,13 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         data[field_name] = f.getvalue()
     # Now, fill in details saved from form:
     for f in form_script:
-      if f not in fields:
-        raise ReplayFailure('Filling in form failed: Saved field %s not found in current form',f)
       (action, params) = form_script[f]
+      if action.startswith('a'):
+        # Additional item, not in original form
+        action = action.lstrip('a')
+      else:
+        if f not in fields:
+          raise ReplayFailure('Filling in form failed: Saved field %s not found in current form',f)
       if action == 's':
         data[f] = params
       elif action == 'u':
@@ -364,6 +378,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     class Field(dict):
       def __init__(self, d, ui):
         self.action = 'x'
+        self.additional = False
         self.checked = False
         self._ui = ui
         dict.__init__(self,d)
@@ -445,10 +460,11 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           pass # Don't submit unchecked radio buttons
         else: # Otherwise, add it:
           action = f.action
+          additional = 'a' if f.additional else ''
           if action == 's':
-            ret[f.getname()] = (action, f.getvalue())
+            ret[f.getname()] = (additional+action, f.getvalue())
           elif action in ['u', 'o', 'n']:
-            ret[f.getname()] = (action, None)
+            ret[f.getname()] = (additional+action, None)
       if submit_button is not None:
         ret[submit_button.getname()] = ('s', submit_button.getvalue()) # submit button
       return (self.getname(), self.getaction(), self.getmethod(), ret)
