@@ -1,19 +1,12 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
+Xlib = None
+import select
 from ui import ui_tty, ui_null
 
-try:
-  from Xlib import X, Xatom, error as Xerror
-  import Xlib.display
-  defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
-except ImportError:
-  print 'Error importing python-Xlib, X clipboard integration will be unavailable'
-  defSelections = None
+defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
 
-import select
-
-class XlibNotFound(Exception): pass
 class XFailConnection(Exception): pass
 
 def newTimestamp(display, window):
@@ -91,12 +84,18 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
   selections are used for middle click and shift+insert pasting, while the
   CLIPBOARD selection is often used by Ctrl+V pasting.
 
-  Raises an XlibNotFound exception if python-xlib failed to import.
   Raises an XFailConnection exception if connecting to the X DISPLAY failed.
   """
-
-  try: Xlib
-  except NameError: raise XlibNotFound()
+  global Xlib, X, Xatom, Xerror
+  if Xlib is None:
+    ui.status('Initialising python-Xlib, stand by...')
+    ui.mainloop.draw_screen()
+    try:
+      from Xlib import X, Xatom, error as Xerror
+      import Xlib.display
+    except ImportError:
+      ui.status('Error importing python-Xlib, X clipboard integration unavailable')
+      return
 
   selections = txtselections[:]
 
@@ -124,6 +123,8 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
 
   # Opening the display prints 'Xlib.protocol.request.QueryExtension' to
   # stdout, so temporarily redirect it:
+  ui.status('Connecting to display, stand by...')
+  ui.mainloop.draw_screen()
   import sys, StringIO
   saved_stdout = sys.stdout
   sys.stdout = StringIO.StringIO()
