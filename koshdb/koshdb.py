@@ -24,8 +24,11 @@ class KeyExpired(Exception): pass
 class Bug(Exception): pass
 class ReadOnlyPassEntry(Exception): pass
 
-passDefaultFieldOrder = ['Username','Password']
-passDefaultCopyFieldOrder = ['Username','Password']
+# FIXME: HACK to work with pwsafe imported files for now:
+#passDefaultFieldOrder = ['Username','Password']
+#passDefaultCopyFieldOrder = ['Username','Password']
+passDefaultFieldOrder = ['Username','login','Password','passwd']
+passDefaultCopyFieldOrder = ['Username','login','Password','passwd']
 
 class _masterKey(object):
   # TODO: Add timeout
