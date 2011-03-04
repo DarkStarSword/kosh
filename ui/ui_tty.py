@@ -11,23 +11,37 @@ class ui_tty(object):
   # file descriptors that need to be queries and input relayed):
   mainloop = ui_null.ui_null()
 
+  # https://secure.wikimedia.org/wikipedia/en/wiki/ANSI_escape_code#CSI_codes
+  # Refer to "SGR (Select Graphic Rendition) parameters"
   ttycolours = {
-      'dark red'       : '\x1b[0;31;40m',
-      'red'            : '\x1b[1;31;40m',
-      'dark green'     : '\x1b[0;32;40m',
-      'green'          : '\x1b[1;32;40m',
-      'dark yellow'    : '\x1b[0;33;40m',
-      'yellow'         : '\x1b[1;33;40m',
-      'dark blue'      : '\x1b[0;34;40m',
-      'blue'           : '\x1b[1;34;40m',
-      'magenta'        : '\x1b[0;35;40m',
-      'bright magenta' : '\x1b[1;35;40m',
-      'cyan'           : '\x1b[0;36;40m',
-      'bright cyan'    : '\x1b[1;36;40m',
-      'grey'           : '\x1b[0;37;40m',
-      'white'          : '\x1b[1;37;40m',
+      'reset'          : '0',
+      'hack'           : '0;37;40',
 
-      'reset'          : '\x1b[0;37;40m',
+      'bright'         : '1',
+      #'faint'         : '2',
+      #'italic'        : '3',
+      'underline'      : '4',
+      'blink'          : '5',
+      #'rapid_blink'   : '6',
+      'negative'       : '7',
+      #'conceal'       : '8',
+      #'crossed-out'   : '9',
+      #10-19 - fonts
+      #'fraktur'       : '20',
+      #21 - bright/bold off; or double underline
+      #22-29 - reset some things or reserved
+
+      'black'          : '30',  'back_black'     : '40',
+      'grey'         : '1;30',
+      'red'            : '31',  'back_red'       : '41',
+      'green'          : '32',  'back_green'     : '42',
+      'yellow'         : '33',  'back_yellow'    : '43',
+      'blue'           : '34',  'back_blue'      : '44',
+      'magenta'        : '35',  'back_magenta'   : '45',
+      'cyan'           : '36',  'back_cyan'      : '46',
+      'white'          : '37',  'back_white'     : '47',
+      # 38 - select 256 colour  # 38 - select 256 colour
+      'default'        : '39',  'back_default'   : '49',
   }
 
   # I want to be able to call these without instantiating this class for the moment:
@@ -121,8 +135,15 @@ class ui_tty(object):
       print msg
 
   @staticmethod
+  def _sgr(colour):
+    return '\x1b[%sm' % ';'.join([ui_tty.ttycolours['hack']]+[ ui_tty.ttycolours[x] for x in colour.split() ])
+
+  @staticmethod
   def _ctext(colour, msg):
-    return ui_tty.ttycolours[colour] + msg + ui_tty.ttycolours['reset']
+    return ui_tty._sgr(colour) + msg + ui_tty._sgr('reset')
+  @staticmethod
+  def _ctext_escape_len(colour='default'):
+    return len(ui_tty._ctext(colour, ''))
 
   @staticmethod
   def _cprint(colour, msg, sep=' ', end='\n', file=None):

@@ -183,7 +183,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       link = select_element(ui, "Enter part of the link to follow: ", self.links)
       url = link['href']
       url = urlparse.urljoin(state.url, url)
-      if ui.confirm('Follow link "%s" to %s'%(ui._ctext('yellow', link.data), ui._ctext('blue', url)), True):
+      if ui.confirm('Follow link "%s" to %s'%(ui._ctext('bright yellow', link.data), ui._ctext('bright blue', url)), True):
         return link.data
       raise _CancelAction('User aborted')
   def apply(self, ui, state, link):
@@ -199,7 +199,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       dict.__init__(self,d)
     def selectable(self):
       if not 'href' in self:
-        self._ui._cprint('dark red', 'filtering out link with no URL')
+        self._ui._cprint('red', 'filtering out link with no URL')
         return False
       return True
     def matches(self, match):
@@ -207,9 +207,10 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     def exact_matches(self, match):
       return match == self.data
     def __str__(self):
-      return "%50s -> %s"%(
-        '"%s"'%self._ui._ctext('yellow', self.data) if self.data else self._ui._ctext('reset', '<NO TEXT LINK>'),
-        self._ui._ctext('blue', self['href']) if 'href' in self else '<NO URL>'
+      return "%*s -> %s"%(
+        30+self._ui._ctext_escape_len(),
+        '"%s"'%self._ui._ctext('bright yellow', self.data) if self.data else self._ui._ctext('default', '<NO TEXT LINK>'),
+        self._ui._ctext('bright blue', self['href']) if 'href' in self else '<NO URL>'
       )
 
   def update(self, ui, state):
@@ -221,7 +222,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
         self.feed(food)
         self.close()
       except HTMLParser.HTMLParseError, e:
-        self._ui._cprint('red', 'HTMLParseError: %s'%e)
+        self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
         food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
@@ -235,20 +236,20 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
   def handle_starttag(self, tag, attrs):
     if tag == 'a':
       self.dom.append(self.Link(attrs, self._ui))
-      #self._ui._cprint('blue', '%i: <a href="%%s">, attrs:%s'%(self.in_links,repr(dict(attrs))))
+      #self._ui._cprint('bright blue', '%i: <a href="%%s">, attrs:%s'%(self.in_links,repr(dict(attrs))))
     # FIXME: Catch images (alttext, url) or other objects that could identify a link
   def handle_endtag(self, tag):
     if tag == 'a':
       if not len(self.dom):
-        #self._ui._cprint('yellow', '</a INVALID>')
+        #self._ui._cprint('bright yellow', '</a INVALID>')
         return
       link = self.dom.pop()
       link.data = ' '.join(link.data.split()) #Normalise whitespace
       self.links.append(link)
-      #self._ui._cprint('blue', '%i: </a>'%self.in_links)
+      #self._ui._cprint('bright blue', '%i: </a>'%self.in_links)
   def handle_data(self, data):
     if len(self.dom):
-      #self._ui._cprint('dark blue', data)
+      #self._ui._cprint('blue', data)
       self.dom[-1].data += data
 
 class action_form(urlvcr_action, HTMLParser.HTMLParser):
@@ -265,18 +266,18 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     return "Fill in and submit form on current page"
   def ask_params(self, ui, state):
     self.update(ui, state)
-    form = select_element(ui, "Enter part of the %s name or action to fill in: "%ui._ctext('yellow', 'form'), self.forms)
+    form = select_element(ui, "Enter part of the %s name or action to fill in: "%ui._ctext('bright yellow', 'form'), self.forms)
     form.editing = True
     while True:
       ui._print(str(form))
-      idx = raw_input("Enter %s index to edit, 's' to submit, 'a' to add an additional value: "%ui._ctext('dark green', 'field'))
+      idx = raw_input("Enter %s index to edit, 's' to submit, 'a' to add an additional value: "%ui._ctext('green', 'field'))
       if not idx:
         if ui.confirm('Really discard form?', False):
           raise _CancelAction('User aborted')
         continue
       if idx.lower() == 's':
         if ui.confirm('Really submit form to %s *without* using submit button?'%(
-          ui._ctext('blue', form.getaction() if form.getaction() else state.url)), False):
+          ui._ctext('bright blue', form.getaction() if form.getaction() else state.url)), False):
           return form.submit(None)
       if idx.lower() == 'a':
         name = raw_input('New field name: ')
@@ -298,8 +299,8 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       if field.gettype() == 'submit':
         v = field.getvalue()
         if not ui.confirm('Submit form via %s button to %s?'%(
-          ui._ctext('yellow', v) if v else '<UNNAMED>',
-          ui._ctext('blue', form.getaction() if form.getaction() else state.url)), True
+          ui._ctext('bright yellow', v) if v else '<UNNAMED>',
+          ui._ctext('bright blue', form.getaction() if form.getaction() else state.url)), True
         ): continue
         return form.submit(field)
 
@@ -406,14 +407,16 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           )
         else:
           val = '%s: %s"%s"'%(
-            self._ui._ctext('red', self.action),
+            self._ui._ctext('bright red', self.action),
             self._ui._ctext('bright cyan', '* ') if self.getchecked() else '',
-            self._ui._ctext('yellow', self.getvalue())
+            self._ui._ctext('bright yellow', self.getvalue())
           )
         type = self.gettype()
-        return '%30s %-34s: %s'%(
-            '"%s"'%self._ui._ctext('dark yellow', self['name']) if 'name' in self else self._ui._ctext('reset','<UNNAMED>'),
-            '(%s)'%self._ui._ctext('dark green', type) if type else self._ui._ctext('reset','<UNSPECIFIED>'),
+        return '%*s %-*s: %s'%(
+            15+self._ui._ctext_escape_len(),
+            '"%s"'%self._ui._ctext('yellow', self['name']) if 'name' in self else self._ui._ctext('default','<UNNAMED>'),
+            14+self._ui._ctext_escape_len(),
+            '(%s)'%self._ui._ctext('green', type) if type else self._ui._ctext('default','<UNSPECIFIED>'),
             val,
         )
       def getname(self):
@@ -445,15 +448,15 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           or 'id' in self and match.lower() in self['id'].lower()
     def __str__(self):
       return 'Form %s %s (action: %s)\n%s' % (
-        '"%s"'%self._ui._ctext('yellow', self['name']) if 'name' in self else '<UNNAMED>',
-        '"%s"'%self._ui._ctext('dark yellow', self['id']) if 'id' in self else '<NO_ID>',
-        '"%s"'%self._ui._ctext('blue', self['action']) if 'action' in self else '<NO_ACTION>',
+        '"%s"'%self._ui._ctext('bright yellow', self['name']) if 'name' in self else '<UNNAMED>',
+        '"%s"'%self._ui._ctext('yellow', self['id']) if 'id' in self else '<NO_ID>',
+        '"%s"'%self._ui._ctext('bright blue', self['action']) if 'action' in self else '<NO_ACTION>',
         '\n'.join([
           '%s\t%s'%(
             '%i:'%idx if self.editing else '',
             str(field)
           ) if type(field) == action_form.Form.Field else
-          '\t%46s'%('"%s"'%self._ui._ctext('dark blue', field))
+          '\t%46s'%('"%s"'%self._ui._ctext('blue', field))
         for (idx, field) in enumerate(self.fields) ])
       )
     def getname(self):
@@ -493,7 +496,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         self.feed(food)
         self.close()
       except HTMLParser.HTMLParseError, e:
-        self._ui._cprint('red', 'HTMLParseError: %s'%e)
+        self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
         food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
@@ -505,12 +508,12 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     self.dom = []
     HTMLParser.HTMLParser.reset(self)
   def handle_starttag(self, tag, attrs):
-    colour = 'dark yellow'
+    colour = 'yellow'
     if tag == 'form':
       self.dom.append(self.Form(attrs, self._ui))
     elif tag == 'input':
       if not len(self.dom):
-        self._ui._cprint('red', '<input INVALID>')
+        self._ui._cprint('bright red', '<input INVALID>')
         return
       self.dom[-1].fields.append(action_form.Form.Field(attrs, self._ui))
     #else:
@@ -518,10 +521,10 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       #colour = 'grey'
     #self._ui._cprint(colour, '%i: <%s>, attrs:%s'%(len(self.dom),tag,repr(dict(attrs))))
   def handle_endtag(self, tag):
-    colour = 'dark yellow'
+    colour = 'yellow'
     if tag == 'form':
       if not len(self.dom):
-        self._ui._cprint('red', '</form INVALID>')
+        self._ui._cprint('bright red', '</form INVALID>')
         return
       form = self.dom.pop()
       self.forms.append(form)
@@ -533,7 +536,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     if len(self.dom):
       data = ' '.join(data.split()) # Normalise whitespace
       if data:
-        #self._ui._cprint('dark blue', data)
+        #self._ui._cprint('blue', data)
         try:
           if type(self.dom[-1].fields[-1]) == str:
             self.dom[-1].fields[-1] += ' '+data
@@ -601,7 +604,7 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
         self.close()
       except HTMLParser.HTMLParseError, e:
         if self._ui:
-          self._ui._cprint('red', 'HTMLParseError: %s'%e)
+          self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         else:
           print 'HTMLParseError: %s'%e
         lineno = e.lineno
@@ -622,7 +625,7 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
           #self.refresh = [ x for x in attrs['content'].split() if x.startswith('url=') ][0][4:].strip("'")
           self.refresh = attrs['content'].lower().partition('url=')[2].strip("'")
         except IndexError:
-          self._ui._cprint('red', 'Error parsing meta refresh tag') # FIXME: if called from display_valid_actions, ui==None
+          self._ui._cprint('bright red', 'Error parsing meta refresh tag') # FIXME: if called from display_valid_actions, ui==None
 
 class action_auth(urlvcr_action):
   def valid(self, state):
@@ -633,12 +636,12 @@ class action_auth(urlvcr_action):
   def ask_params(self, ui, state):
     header = state.info['www-authenticate']
     if not header.startswith('Basic realm="'):
-      ui._cprint('red', "Don't know how to handle authentication type %s"%header)
+      ui._cprint('bright red', "Don't know how to handle authentication type %s"%header)
       raise _CancelAction
     try:
       realm = header.split('"')[1]
     except IndexError:
-      ui._cprint('red', "Error parsing www-authenticate header")
+      ui._cprint('bright red', "Error parsing www-authenticate header")
       raise _CancelAction
     import getpass # FIXME: UI
     if ui.confirm('Override username?', False):
@@ -689,7 +692,7 @@ class action_auth(urlvcr_action):
     # FIXME: This won't be undone properly, and will mess up if we auth multiple times:
     state.handlers.append(authmgr)
     state.opener = urllib2.build_opener(*state.handlers)
-    ui._cprint('yellow', "Authentication credentials set - you probably want to refresh now ('r').")
+    ui._cprint('bright yellow', "Authentication credentials set - you probably want to refresh now ('r').")
 
 class action_refresh(urlvcr_action):
   def valid(self, state):
@@ -711,7 +714,7 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
       name = frame['name']
       src = frame['src']
       url = urlparse.urljoin(state.url, src)
-      if ui.confirm('Enter frame "%s" to %s'%(ui._ctext('yellow', name), ui._ctext('blue', url)), True):
+      if ui.confirm('Enter frame "%s" to %s'%(ui._ctext('bright yellow', name), ui._ctext('bright blue', url)), True):
         return (name, src)
       raise _CancelAction('User aborted')
   def apply(self, ui, state, (name, src)):
@@ -726,15 +729,16 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
       dict.__init__(self,d)
     def selectable(self):
       if 'src' not in self:
-        self._ui._cprint('dark red', 'filtering out frame with no SRC')
+        self._ui._cprint('red', 'filtering out frame with no SRC')
         return False
       return True
     def matches(self, match):
       return 'name' in self and match.lower() in self['name'].lower() or 'src' in self and match.lower() in self['src'].lower()
     def __str__(self):
-      return '%30s : %s' % (
-        '"%s"'%self._ui._ctext('yellow', self['name']) if 'name' in self else self._ui.ctext('reset', '<UNNAMED>'),
-        '"%s"'%self._ui._ctext('blue', self['src']) if 'src' in self else '<NO_SRC>',
+      return '%*s : %s' % (
+        10+self._ui._ctext_escape_len(),
+        '"%s"'%self._ui._ctext('bright yellow', self['name']) if 'name' in self else self._ui.ctext('default', '<UNNAMED>'),
+        '"%s"'%self._ui._ctext('bright blue', self['src']) if 'src' in self else '<NO_SRC>',
       )
 
   def update(self, ui, state):
@@ -746,7 +750,7 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
         self.feed(food)
         self.close()
       except HTMLParser.HTMLParseError, e:
-        self._ui._cprint('red', 'HTMLParseError: %s'%e)
+        self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
         food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
@@ -778,7 +782,7 @@ class action_save(urlvcr_action):
       fp = open(filename,'wb')
       fp.write(state.body)
     except Exception,e:
-      self._ui._cprint('red', 'Exception while saving file: %s'%e)
+      self._ui._cprint('bright red', 'Exception while saving file: %s'%e)
     finally:
       if fp is not None:
         fp.close()
@@ -806,7 +810,7 @@ class urlvcr_actions(dict):
   def ask_next_action(self, ui, state):
     import sys
     while True:
-      ui._cprint('green', str(state))
+      ui._cprint('bright green', str(state))
       ui._print("-------------")
       ui._print("Enter action:")
       actions.display_valid_actions(ui, state)
@@ -848,7 +852,7 @@ def get_actions_from_script(ui, state, script):
   for action in script:
     ui._cprint('white', 'Replaying action %s...'%action)
     yield action
-    ui._cprint('green', 'Current State:\n%s'%str(state))
+    ui._cprint('bright green', 'Current State:\n%s'%str(state))
 
 def apply_action(ui, state, action):
   a = actions[action[0]]
@@ -857,13 +861,13 @@ def apply_action(ui, state, action):
   try:
     a.apply(ui, state, action[1])
   except ReplayFailure, e:
-    ui._cprint('red', 'Replay Failure, undoing last action: %s'%e)
+    ui._cprint('bright red', 'Replay Failure, undoing last action: %s'%e)
     assert(a.changes_state)
     state.pop()
     raise
   except urllib2.URLError, socket.timeout:
     assert(a.changes_state)
-    ui._cprint('dark red', 'Unhandled URLError, undoing last action')
+    ui._cprint('red', 'Unhandled URLError, undoing last action')
     state.pop()
     raise ReplayFailure('Unhandled URLError')
 
@@ -953,25 +957,25 @@ class urlvcr(object):
           response = self.state.opener.open(request)
       except urllib2.HTTPError, e:
         if e.code == 401:
-          ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
+          ui._cprint('bright red', 'HTTP status code: %s: %s'%(e.code, e.msg))
           response = e
         else:
-          ui._cprint('red', 'HTTP status code: %s: %s'%(e.code, e.msg))
+          ui._cprint('bright red', 'HTTP status code: %s: %s'%(e.code, e.msg))
           raise
       except (urllib2.URLError, socket.timeout), e:
         if hasattr(e, 'reason'):
-          ui._cprint('red', 'Failed to reach server: %s'%e.reason)
+          ui._cprint('bright red', 'Failed to reach server: %s'%e.reason)
         else:
-          ui._cprint('red', 'Failed to reach server: timeout')
+          ui._cprint('bright red', 'Failed to reach server: timeout')
         if tries:
-          ui._cprint('dark red', 'Retrying...')
+          ui._cprint('red', 'Retrying...')
           continue
         raise
       break
     try:
       self.state.url = response.geturl()
     except AttributeError:
-      ui._cprint('red', 'Response did not contain a URL, assuming we went to the requested URL...')
+      ui._cprint('bright red', 'Response did not contain a URL, assuming we went to the requested URL...')
       self.state.url = url
     self.state.info = response.info()
     self.state.body = ''
@@ -981,16 +985,16 @@ class urlvcr(object):
       try:
         self.state.body += response.read()
       except (socket.timeout, urllib2.URLError, ssl.SSLError), e:
-        ui._cprint('red', 'Exception while reading page: %s'%e)
+        ui._cprint('bright red', 'Exception while reading page: %s'%e)
         if tries:
-          ui._cprint('dark red', 'Retrying...')
+          ui._cprint('red', 'Retrying...')
           continue
         raise
       break
 
     a = action_meta()
     if a.valid(self, ui):
-      ui._cprint('yellow', 'meta refresh tag detected, following...')
+      ui._cprint('bright yellow', 'meta refresh tag detected, following...')
       a.apply(ui, self, None)
 
   def __str__(self):
@@ -1032,7 +1036,7 @@ def main(ui, script=None, username=None, oldpass=None, newpass=None):
       apply_action(ui, state, action)
     except ReplayFailure, e:
       if interactive:
-        ui._cprint('dark red', 'continuing since interactive...')
+        ui._cprint('red', 'continuing since interactive...')
         continue
       raise
   script = state.getscript()

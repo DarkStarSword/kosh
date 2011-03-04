@@ -60,7 +60,7 @@ def flatten1(l):
 
 def expect_groups(ui, self, groups):
   flatten = list(flatten1(groups))
-  #ui._cprint("dark blue", "%s.expect(%s)"%(repr(self),repr(flatten)))
+  #ui._cprint("blue", "%s.expect(%s)"%(repr(self),repr(flatten)))
   ret = self.expect(flatten)
   newgroups = flatten1([[g]*len(g) for g in groups])
   return newgroups[ret]
@@ -95,11 +95,11 @@ def test_expect_groups(ui):
 def change_tty_passwd(ui, oldpass, newpass, tty=None):
   mustclose = False
   if tty is None:
-    ui._cprint('yellow', "Changing local password")
+    ui._cprint('bright yellow', "Changing local password")
     tty = pexpect.spawn('passwd')
     mustclose = True
     import sys
-    log = filteringIOProxy(sys.stdout, [(oldpass, ui._ctext('dark blue', '<OLD_PASS>')),(newpass, ui._ctext('dark blue', '<NEW_PASS>'))])
+    log = filteringIOProxy(sys.stdout, [(oldpass, ui._ctext('blue', '<OLD_PASS>')),(newpass, ui._ctext('blue', '<NEW_PASS>'))])
     # TODO: Want both logging to the same StringIO, but _send passing through the filtering proxy
     tty.logfile_read = sys.stdout
     tty.logfile_send = log
@@ -111,11 +111,11 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
   state = PasswordChangeFailure
 
   try:
-    ui._cprint('dark yellow', 'waiting for current password prompt...')
+    ui._cprint('yellow', 'waiting for current password prompt...')
     result = expect_groups(ui, tty, [old_pass_prompts, new_pass_prompts])
 
     if result == old_pass_prompts: # root is not prompted for an old password
-      #ui._cprint('yellow','sending old password...')
+      #ui._cprint('bright yellow','sending old password...')
       tty.sendline(oldpass)
 
       result = expect_groups_exception(ui, tty, [new_pass_prompts],
@@ -123,7 +123,7 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
 
     state = PasswordChangePossibleFailure
 
-    #ui._cprint('yellow','sending new password...')
+    #ui._cprint('bright yellow','sending new password...')
     tty.sendline(newpass)
 
     result = expect_groups_exception(ui, tty, [confirm_pass_prompts],
@@ -132,7 +132,7 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
           new_pass_prompts: _PasswordChangeReprompted('Asked for new password again instead of expected request for confirmation. Log may contain additional detail.'),
         })
 
-    #ui._cprint('yellow','Re-sending new password...')
+    #ui._cprint('bright yellow','Re-sending new password...')
     tty.sendline(newpass)
 
     reprompted = hashable_list(new_pass_prompts + confirm_pass_prompts)
@@ -146,19 +146,19 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
 
   except _PasswordChangeReprompted, e:
     mustclose = True
-    ui._cprint('red','Got prompt for new password again')
+    ui._cprint('bright red','Got prompt for new password again')
     raise state(str(e))
   except PasswordChangeFailure, e:
-    ui._cprint('red', str(e))
+    ui._cprint('bright red', str(e))
     #print log
     raise
   except pexpect.TIMEOUT:
     mustclose = True # Otherwise we might try entering 'exit' at a prompt
-    ui._cprint('red', 'timeout')
+    ui._cprint('bright red', 'timeout')
     #print log
     raise state('TIMEOUT')
   except pexpect.EOF:
-    ui._cprint('red', 'Unexpected end of output')
+    ui._cprint('bright red', 'Unexpected end of output')
     #print log
     raise state('Unexpected EOF')
   finally:
@@ -229,7 +229,7 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
   #log = StringIO.StringIO()
   import sys
   if filter is None:
-    filter = [(password, ui._ctext('dark blue', '<PASSWORD>'))]
+    filter = [(password, ui._ctext('blue', '<PASSWORD>'))]
   log = filteringIOProxy(sys.stdout, filter)
   pxssh.pxssh.synch_original_prompt = replace_synch_original_prompt
   s = pxssh.pxssh()
@@ -242,7 +242,7 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
   s.logfile_send = log
   s.force_password = force_password
   try:
-    s.login(host, username, password)
+    s.login(host, username, password, original_prompt=r"[#$>] ")
   except pxssh.ExceptionPxssh, e:
     raise LoginFailure(str(e))
   except pexpect.EOF, e:
@@ -265,15 +265,15 @@ def verify_ssh_passwd(ui, host, username, password):
 
 def change_ssh_passwd(ui, host, username, oldpass, newpass):
   # Login:
-  ui._cprint('dark yellow', 'Logging in to %s...'%host)
+  ui._cprint('yellow', 'Logging in to %s...'%host)
   try:
-    s = ssh_open(ui, host, username, oldpass, filter=[(oldpass, ui._ctext('dark blue', '<OLD_PASS>')),(newpass, ui._ctext('dark blue', '<NEW_PASS>'))])
-    ui._cprint('green', 'Ok')
+    s = ssh_open(ui, host, username, oldpass, filter=[(oldpass, ui._ctext('blue', '<OLD_PASS>')),(newpass, ui._ctext('blue', '<NEW_PASS>'))])
+    ui._cprint('bright green', 'Ok')
   except LoginFailure, e:
-    ui._cprint('red', 'failure: %s'%str(e))
+    ui._cprint('bright red', 'failure: %s'%str(e))
     raise PasswordChangeFailure(str(e))
 
-  ui._cprint('yellow', 'Changing password...')
+  ui._cprint('bright yellow', 'Changing password...')
   # Change:
   verifyException = None
   try:
@@ -297,21 +297,21 @@ def change_ssh_passwd(ui, host, username, oldpass, newpass):
     except: pass
 
   # Verify:
-  ui._cprint('yellow', 'Verifying password change on %s...'%host)
-  ui._cprint('dark yellow', 'trying new password...')
+  ui._cprint('bright yellow', 'Verifying password change on %s...'%host)
+  ui._cprint('yellow', 'trying new password...')
   if verify_ssh_passwd(ui, host, username, newpass):
     return True
   else:
-    ui._cprint('red', ' Failure')
-    ui._cprint('dark yellow', 'Trying old password...')
+    ui._cprint('bright red', ' Failure')
+    ui._cprint('yellow', 'Trying old password...')
     if verify_ssh_passwd(ui, host, username, oldpass):
-      ui._cprint('yellow', ' Password unchanged!')
+      ui._cprint('bright yellow', ' Password unchanged!')
       if verifyException is not None:
         # If we possibly failed earlier, that exception will have more detail than we know now, so raise it:
         raise verifyException
       raise PasswordChangeFailure('Failed to verify password change, but old password still works')
     else:
-      ui._cprint('red', ' Verification Failed!')
+      ui._cprint('bright red', ' Verification Failed!')
       if verifyException is not None:
         raise verifyException
       raise PasswordChangeVerifyFailure()
@@ -379,7 +379,7 @@ def update_config(ui, filename, oldpass, newpass):
     original = fp.readlines()
     fp.close()
   except IOError, e:
-    ui._cprint('red', 'IOError processing %s: %s'%(filename, str(e)))
+    ui._cprint('bright red', 'IOError processing %s: %s'%(filename, str(e)))
     raise PasswordChangeFailure()
 
   oldcompiled = re.compile(r'\b%s\b'%oldpass)
@@ -389,14 +389,14 @@ def update_config(ui, filename, oldpass, newpass):
   diff = list(difflib.unified_diff(original, modified, filename, filename))
 
   if diff == []:
-    ui._cprint('red', 'WARNING: Password not matched in %s, not updating'%filename)
+    ui._cprint('bright red', 'WARNING: Password not matched in %s, not updating'%filename)
     return False
 
   for line in diff:
     {
-        '-' : lambda x : ui._cprint('dark red', x, end=''),
-        '+' : lambda x : ui._cprint('dark green', x, end=''),
-        '@' : lambda x : ui._cprint('blue', x, end=''),
+        '-' : lambda x : ui._cprint('red', x, end=''),
+        '+' : lambda x : ui._cprint('green', x, end=''),
+        '@' : lambda x : ui._cprint('bright blue', x, end=''),
         }.get(line[0], lambda x : ui._print(x, end='')) \
             (reduce(lambda x,(re,rep): re.sub(rep,x),
               [
@@ -404,7 +404,7 @@ def update_config(ui, filename, oldpass, newpass):
                 (newcompiled, '<NEW PASS>')
               ], line))
 
-  if ui._cconfirm('blue', '\nApply change?', True):
+  if ui._cconfirm('bright blue', '\nApply change?', True):
     try:
       # FIXME: Permissions?
       # FIXME: Symbolic links?
@@ -474,49 +474,49 @@ def main(ui):
 
     if proto == 'verifyssh':
       try:
-        ui._cprint('yellow', 'Verifying password on %s...'%host)
+        ui._cprint('bright yellow', 'Verifying password on %s...'%host)
         if verify_ssh_passwd(ui, host, username, oldpass):
-          ui._cprint('green', 'Ok')
+          ui._cprint('bright green', 'Ok')
         else:
-          ui._cprint('red', 'Failed!')
+          ui._cprint('bright red', 'Failed!')
       except pexpect.TIMEOUT, e:
-        ui._cprint('red', 'timeout')
+        ui._cprint('bright red', 'timeout')
       except _PasswordChangeException, e:
-        ui._cprint('red', 'Exception verifying password on %s:'%(host, e))
+        ui._cprint('bright red', 'Exception verifying password on %s:'%(host, e))
       except Exception, e:
         import traceback
-        ui._cprint('dark red', traceback.format_exc())
-        ui._cprint('red', 'Exception verifying password on %s:'%(host, e))
+        ui._cprint('red', traceback.format_exc())
+        ui._cprint('bright red', 'Exception verifying password on %s:'%(host, e))
 
     if proto == 'ssh':
       try:
-        ui._cprint('yellow', 'Changing password on %s for user %s...'%(host, username))
+        ui._cprint('bright yellow', 'Changing password on %s for user %s...'%(host, username))
         if change_ssh_passwd(ui, host, username, oldpass, newpass):
-          ui._cprint('green', 'Success')
+          ui._cprint('bright green', 'Success')
       except _PasswordChangeException, e:
-        ui._cprint('red', 'Password change failed on %s: %s'%(host,e))
+        ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
       except Exception, e:
         import traceback
-        ui._cprint('dark red', traceback.format_exc())
-        ui._cprint('red', 'Password change failed on %s: %s'%(host,e))
+        ui._cprint('red', traceback.format_exc())
+        ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
 
     if proto == 'localhost':
       try:
         if change_tty_passwd(ui, oldpass, newpass):
-          ui._cprint('green', 'Success')
+          ui._cprint('bright green', 'Success')
       except _PasswordChangeException, e:
-        ui._cprint('red', 'Local password change failed: %s'%e)
+        ui._cprint('bright red', 'Local password change failed: %s'%e)
       except Exception, e:
         import traceback
-        ui._cprint('dark red', traceback.format_exc())
-        ui._cprint('red', 'Local password change failed: %s'%e)
+        ui._cprint('red', traceback.format_exc())
+        ui._cprint('bright red', 'Local password change failed: %s'%e)
 
     if proto == 'conf':
       try:
-        ui._cprint('yellow', 'Updating %s...'%data)
+        ui._cprint('bright yellow', 'Updating %s...'%data)
         update_config(ui, data, oldpass, newpass)
       except:
-        ui._cprint('red', 'Updating configuration file failed!')
+        ui._cprint('bright red', 'Updating configuration file failed!')
 
 if __name__ == '__main__':
   import ui.ui_tty
