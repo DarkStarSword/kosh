@@ -798,12 +798,13 @@ class action_save(urlvcr_action):
       raise _CancelAction('User aborted')
     return filename
   def apply(self, ui, state, filename):
+    import os
     fp=None
     try:
-      fp = open(filename,'wb')
+      fp = open(os.path.expanduser(filename),'wb')
       fp.write(state.body)
     except Exception,e:
-      self._ui._cprint('bright red', 'Exception while saving file: %s'%e)
+      ui._cprint('bright red', 'Exception while saving file: %s'%e)
     finally:
       if fp is not None:
         fp.close()
