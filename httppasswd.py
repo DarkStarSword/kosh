@@ -936,6 +936,10 @@ class urlvcr(object):
     if get:
       get = '?'+urllib.urlencode(get)
 
+    # In case we are at a URL like http://foo and follow a link like '?bar':
+    if url.count('/') == 2:
+      url += '/'
+
     request = urllib2.Request(url+get, post)
 
     referer = None
