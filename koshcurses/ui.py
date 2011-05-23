@@ -18,7 +18,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.db = db
     self.pwForm = pwForm
     self.ui = ui
-    self.visibleEntries = self.db
+    self.visibleEntries = self.db.keys()
     self.refresh()
     urwid.WidgetWrap.__init__(self, self.lb)
 
@@ -30,7 +30,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.selection = 0
     self._set_w(self.lb)
     if len(self.visibleEntries):
-      self.showing = self.visibleEntries[self.lb.get_focus()[0].get_label()]
+      self.showing = self.db[self.lb.get_focus()[0].get_label()]
       self.pwForm.show(self.showing)
 
   def keypress(self, size, key):
@@ -73,16 +73,16 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   def search(self, search):
     import string
     if not search:
-      self.visibleEntries = self.db
+      self.visibleEntries = self.db.keys()
       ret = None
     else:
-      self.visibleEntries = {}
+      self.visibleEntries = []
       for entry in self.db:
         # FIXME: Don't (optionally?) search on other protected fields
         if reduce(lambda x,y: x or search.lower() in y, map(string.lower,
           [entry]+[v for (k,v) in self.db[entry].items()
             if k.lower() not in ['password']]), False):
-            self.visibleEntries[entry] = self.db[entry]
+            self.visibleEntries.append(entry)
       ret = len(self.visibleEntries)
     self.refresh()
     return ret
@@ -270,9 +270,8 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
 
   def commitNew(self, entry):
     self.db[entry.name] = entry
-    self.pwEntry.show(entry)
-    self.pwList.refresh()
     self.db.write()
+    self.pwList.refresh()
 
   def cancel(self):
     # Necessary to get focus back
