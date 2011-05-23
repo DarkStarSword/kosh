@@ -172,28 +172,32 @@ def replace_synch_original_prompt (self):
   """
   Overriding the pxssh method to allow the inital read to timeout if there is
   nothing to read.
+
+  Also, if the first attempt fails, try again with a larger round trip time for
+  the prompt to appear after sending an enter press.
   """
-  try:
-    self.read_nonblocking(size=10000,timeout=1) # GAS: Clear out the cache before getting
-  except pexpect.TIMEOUT: pass
-  time.sleep(0.1)
-  self.sendline()
-  time.sleep(0.5)
-  x = self.read_nonblocking(size=1000,timeout=1)
-  time.sleep(0.1)
-  self.sendline()
-  time.sleep(0.5)
-  a = self.read_nonblocking(size=1000,timeout=1)
-  time.sleep(0.1)
-  self.sendline()
-  time.sleep(0.5)
-  b = self.read_nonblocking(size=1000,timeout=1)
-  ld = self.levenshtein_distance(a,b)
-  len_a = len(a)
-  if len_a == 0:
-      return False
-  if float(ld)/len_a < 0.4:
-      return True
+  for rtt in [0.5, 1.5]:
+      try:
+        self.read_nonblocking(size=10000,timeout=1) # GAS: Clear out the cache before getting
+      except pexpect.TIMEOUT: pass
+      time.sleep(0.1)
+      self.sendline()
+      time.sleep(rtt)
+      x = self.read_nonblocking(size=1000,timeout=1)
+      time.sleep(0.1)
+      self.sendline()
+      time.sleep(rtt)
+      a = self.read_nonblocking(size=1000,timeout=1)
+      time.sleep(0.1)
+      self.sendline()
+      time.sleep(rtt)
+      b = self.read_nonblocking(size=1000,timeout=1)
+      ld = self.levenshtein_distance(a,b)
+      len_a = len(a)
+      if len_a == 0:
+          continue
+      if float(ld)/len_a < 0.4:
+          return True
   return False
 
 class filteringIOProxy(object):
