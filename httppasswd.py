@@ -365,7 +365,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         action = action.lstrip('a')
       else:
         if f not in fields:
-          raise ReplayFailure('Filling in form failed: Saved field %s not found in current form',f)
+          raise ReplayFailure('Filling in form failed: Saved field "%s" not found in current form' % f)
       if action == 's':
         data[f] = params
       elif action == 'u':
@@ -483,7 +483,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
             ret[f.getname()] = (additional+action, f.getvalue())
           elif action in ['u', 'o', 'n']:
             ret[f.getname()] = (additional+action, None)
-      if submit_button is not None:
+      if submit_button is not None and submit_button.getname() is not None:
         ret[submit_button.getname()] = ('s', submit_button.getvalue()) # submit button
       return (self.getname(), self.getaction(), self.getmethod(), ret)
 
