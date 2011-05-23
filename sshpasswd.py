@@ -200,6 +200,93 @@ def replace_synch_original_prompt (self):
           return True
   return False
 
+def replace_pxssh_login (self,server,username,password='',terminal_type='ansi',original_prompt=r"[#$]",login_timeout=10,port=None,auto_prompt_reset=True):
+
+    """
+    Replaces the login method in pxssh to not abort on 'your password will
+    expire...' messages
+    """
+    from pxssh import spawn,TIMEOUT,ExceptionPxssh
+
+    ssh_options = '-q'
+    if self.force_password:
+        ssh_options = ssh_options + ' ' + self.SSH_OPTS
+    if port is not None:
+        ssh_options = ssh_options + ' -p %s'%(str(port))
+    cmd = "ssh %s -l %s %s" % (ssh_options, username, server)
+
+    # This does not distinguish between a remote server 'password' prompt
+    # and a local ssh 'passphrase' prompt (for unlocking a private key).
+    spawn._spawn(self, cmd)
+    i = self.expect(["(?i)are you sure you want to continue connecting", original_prompt, "(?i)(?:password)|(?:passphrase for key)", "(?i)permission denied", "(?i)terminal type", TIMEOUT, "(?i)connection closed by remote host"], timeout=login_timeout)
+
+    # First phase
+    if i==0: 
+        # New certificate -- always accept it.
+        # This is what you get if SSH does not have the remote host's
+        # public key stored in the 'known_hosts' cache.
+        self.sendline("yes")
+        i = self.expect(["(?i)are you sure you want to continue connecting", original_prompt, "(?i)(?:password)|(?:passphrase for key)", "(?i)permission denied", "(?i)terminal type", TIMEOUT, "(?i)your password will expire"])
+    if i==2: # password or passphrase
+        self.sendline(password)
+        i = self.expect(["(?i)are you sure you want to continue connecting", original_prompt, "(?i)(?:password)|(?:passphrase for key)", "(?i)permission denied", "(?i)terminal type", TIMEOUT, "(?i)your password will expire"])
+    if i==4:
+        self.sendline(terminal_type)
+        i = self.expect(["(?i)are you sure you want to continue connecting", original_prompt, "(?i)(?:password)|(?:passphrase for key)", "(?i)permission denied", "(?i)terminal type", TIMEOUT, "(?i)your password will expire"])
+
+    if i==6: # Password will expire
+        # Most systems won't stop us if the password is only *going* to expire.
+        # We catch this here to avoid being caught on the second "password" in
+        # this message, which we otherwise would mistake for another password
+        # prompt. Just wait for the next message...
+        i = self.expect(["(?i)are you sure you want to continue connecting", original_prompt, "(?i)(?:password)|(?:passphrase for key)", "(?i)permission denied", "(?i)terminal type", TIMEOUT])
+
+    # Second phase
+    if i==0:
+        # This is weird. This should not happen twice in a row.
+        self.close()
+        raise ExceptionPxssh ('Weird error. Got "are you sure" prompt twice.')
+    elif i==1: # can occur if you have a public key pair set to authenticate. 
+        ### TODO: May NOT be OK if expect() got tricked and matched a false prompt.
+        pass
+    elif i==2: # password prompt again
+        # For incorrect passwords, some ssh servers will
+        # ask for the password again, others return 'denied' right away.
+        # If we get the password prompt again then this means
+        # we didn't get the password right the first time. 
+        self.close()
+        raise ExceptionPxssh ('password refused')
+    elif i==3: # permission denied -- password was bad.
+        self.close()
+        raise ExceptionPxssh ('permission denied')
+    elif i==4: # terminal type again? WTF?
+        self.close()
+        raise ExceptionPxssh ('Weird error. Got "terminal type" prompt twice.')
+    elif i==5: # Timeout
+        #This is tricky... I presume that we are at the command-line prompt.
+        #It may be that the shell prompt was so weird that we couldn't match
+        #it. Or it may be that we couldn't log in for some other reason. I
+        #can't be sure, but it's safe to guess that we did login because if
+        #I presume wrong and we are not logged in then this should be caught
+        #later when I try to set the shell prompt.
+        pass
+    elif i==6: # Connection closed by remote host
+        self.close()
+        raise ExceptionPxssh ('connection closed')
+    else: # Unexpected 
+        self.close()
+        raise ExceptionPxssh ('unexpected login response')
+    if not self.synch_original_prompt():
+        self.close()
+        raise ExceptionPxssh ('could not synchronize with original prompt')
+    # We appear to be in.
+    # set shell prompt to something unique.
+    if auto_prompt_reset:
+        if not self.set_unique_prompt():
+            self.close()
+            raise ExceptionPxssh ('could not set shell prompt\n'+self.before)
+    return True
+
 class filteringIOProxy(object):
   def __init__(self, fp, filters):
     self.fp = fp
@@ -236,6 +323,7 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
     filter = [(password, ui._ctext('blue', '<PASSWORD>'))]
   log = filteringIOProxy(sys.stdout, filter)
   pxssh.pxssh.synch_original_prompt = replace_synch_original_prompt
+  pxssh.pxssh.login = replace_pxssh_login
   s = pxssh.pxssh()
   # pxssh obviousely has never dealt with zsh and it's attempt to make the
   # prompt more unique will put a \ in the prompt that it doesn't expect, this
