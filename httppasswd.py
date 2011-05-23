@@ -268,9 +268,10 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     self.update(ui, state)
     form = select_element(ui, "Enter part of the %s name or action to fill in: "%ui._ctext('bright yellow', 'form'), self.forms)
     form.editing = True
+    form.override_action = None
     while True:
       ui._print(str(form))
-      idx = raw_input("Enter %s index to edit, 's' to submit, 'a' to add an additional value: "%ui._ctext('green', 'field'))
+      idx = raw_input("Enter %s index to edit, 's' to submit, 'a' to add an additional value, 'o' to override form action: "%ui._ctext('green', 'field'))
       if not idx:
         if ui.confirm('Really discard form?', False):
           raise _CancelAction('User aborted')
@@ -287,6 +288,12 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         field.additional = True
         form.fields.append(field)
         idx = str(len(form.fields) - 1)
+      if idx.lower() == 'o':
+        a = raw_input('Override form action (blank to restore default): ')
+        if a:
+          form.override_action = a
+        else:
+          form.override_action = None
       if not idx.isdigit():
         continue
       idx = int(idx)
@@ -447,10 +454,12 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           or 'action' in self and match.lower() in self['action'].lower() \
           or 'id' in self and match.lower() in self['id'].lower()
     def __str__(self):
+      action = self.getaction()
+      if action is None: action = '<NO_ACTION>'
       return 'Form %s %s (action: %s)\n%s' % (
         '"%s"'%self._ui._ctext('bright yellow', self['name']) if 'name' in self else '<UNNAMED>',
         '"%s"'%self._ui._ctext('yellow', self['id']) if 'id' in self else '<NO_ID>',
-        '"%s"'%self._ui._ctext('bright blue', self['action']) if 'action' in self else '<NO_ACTION>',
+        '"%s"'%self._ui._ctext('bright blue', action),
         '\n'.join([
           '%s\t%s'%(
             '%i:'%idx if self.editing else '',
@@ -462,6 +471,8 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     def getname(self):
       return self['name'] if 'name' in self else None
     def getaction(self):
+      if self.override_action is not None:
+        return self.override_action
       return self['action'] if 'action' in self else None
     def getmethod(self):
       return self['method'] if 'method' in self else 'GET'
