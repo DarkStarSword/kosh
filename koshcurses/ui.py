@@ -163,6 +163,12 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       script = httppasswd.main(ui(), None, username, oldpass, newpass)
     finally:
       ui.restore(old)
+    for f in self.fields:
+      # It would be nice to just update self.entry, but we need to avoid clobbering edits...
+      # If we already have a field with this name, it counts as an edit - replace the old field
+      name = f.caption[:-2]
+      if name == field:
+        self.fields.remove(f)
     self.fields += [ widgets.passwordEdit(field+': ', script, revealable=True) ]
     self._edit()
     self._update()
