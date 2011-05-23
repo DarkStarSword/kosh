@@ -633,16 +633,22 @@ class action_auth(urlvcr_action):
         and 'www-authenticate' in state.state.info
   def help(self, state):
     return "Authenticate with basic or digest authentication in the current realm"
-  def ask_params(self, ui, state):
+  def get_realm_from_state(self, ui, state):
+    if 'www-authenticate' not in state.info:
+      return None
     header = state.info['www-authenticate']
     if not header.startswith('Basic realm="'):
       ui._cprint('bright red', "Don't know how to handle authentication type %s"%header)
       raise _CancelAction
     try:
-      realm = header.split('"')[1]
+      return header.split('"')[1]
     except IndexError:
       ui._cprint('bright red', "Error parsing www-authenticate header")
       raise _CancelAction
+  def ask_params(self, ui, state):
+    realm = self.get_realm_from_state(ui, state)
+    if not realm:
+      realm = raw_input('No www-authenticate header found! Enter realm (ASSUMING BASIC AUTH): ')
     import getpass # FIXME: UI
     if ui.confirm('Override username?', False):
       username = ('s', raw_input('Username: '))
@@ -671,6 +677,10 @@ class action_auth(urlvcr_action):
              (password_type, password_override))):
     if auth_type != 'basic':
       raise ReplayFailure('only basic authentication supported for now')
+    srv_realm = self.get_realm_from_state(ui, state)
+    if srv_realm is not None and srv_realm != realm:
+      ui._cprint('bright yellow', "WARNING: Realm in script differs from requested realm on website - using realm from website")
+      realm = srv_realm
     pwmgr = urllib2.HTTPPasswordMgr()
     if username_type == 'u':
       username = state.username
