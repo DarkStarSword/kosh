@@ -87,15 +87,21 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.refresh()
     return ret
 
-class passwordForm(urwid.WidgetWrap):
-  def __init__(self):
+class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
+  keymap = {
+      'y': 'yank',
+      'S': 'runscript',
+      }
+
+  def __init__(self, ui):
     urwid.WidgetWrap.__init__(self, urwid.SolidFill())
     self.lb = None
+    self.ui = ui
 
   def show(self, entry):
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
-      [ urwid.Button(x) for x in entry ] + \
+      [ urwid.Button(x, self.reveal_field) for x in entry ] + \
       [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
     self._update()
 
@@ -104,6 +110,14 @@ class passwordForm(urwid.WidgetWrap):
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
       [ urwid.Text(x+": " + entry[x]) for x in entry ] + \
       [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
+    self._update()
+
+  def reveal_field(self, button):
+    label = button.get_label()
+    index = self.content.index(button)
+    self.content = self.content[:index] + \
+        [ urwid.Text(label+": " + self.entry[label]) ] + \
+        self.content[index+1:]
     self._update()
 
   def edit(self, entry, ok, cancel):
@@ -196,10 +210,6 @@ class passwordForm(urwid.WidgetWrap):
 
   def keypress(self, size, key):
     focus = self._w.get_focus()[0]
-    if key == 'enter':
-      try:
-        if focus.get_label().startswith('HACK_HTTP-SCRIPT_'): self.do_play_http_script()
-      except: pass
     ret = super(passwordForm, self).keypress(size, key)
     if ret is not None:
       # FIXME: generalise these. Tab not handled ideally:
@@ -212,6 +222,22 @@ class passwordForm(urwid.WidgetWrap):
         if focus == self.record_http_script: self.do_record_http_script()
     return ret
 
+  def yank(self, size, key):
+    label = self._w.get_focus()[0].get_label()
+    import xclipboard
+    xclipboard.sendViaClipboard([(label, self.entry[label])], ui=self.ui)
+
+  def runscript(self, size, key):
+    label = self._w.get_focus()[0].get_label()
+    if not label.startswith('HACK_HTTP-SCRIPT_'):
+      self.ui.status("Selected field is not a script");
+      return None
+    try:
+      self.do_play_http_script()
+    except:
+      self.ui.status("Exception while running HTTP password changing script");
+    return None
+
   def _update(self):
     self.lb = urwid.ListBox(self.content)
     self._set_w(self.lb)
@@ -223,7 +249,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
 
   def __init__(self, db):
     self.db = weakref.proxy(db)
-    self.pwEntry = passwordForm()
+    self.pwEntry = passwordForm(self)
     self.pwList = passwordList(self.db, self.pwEntry, self)
     self.container = widgets.LineColumns( [
       ('weight', 0.75, self.pwList),
