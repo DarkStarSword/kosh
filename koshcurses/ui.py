@@ -153,8 +153,14 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     if not field: return
     import httppasswd
     # FIXME: should fetch up to date stuff from editing
-    username = self.entry['Username']
-    newpass = self.entry['Password']
+    if 'Username' in self.entry:
+      username = self.entry['Username']
+    elif 'login' in self.entry:
+      username = self.entry['login']
+    if 'Password' in self.entry:
+      newpass = self.entry['Password']
+    elif 'passwd' in self.entry:
+      newpass = self.entry['passwd']
     # FIXME: Should walk list to find this
     oldpass = self.entry['OldPassword']
     import other_ui.ui_tty as ui
