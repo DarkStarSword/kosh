@@ -51,7 +51,9 @@ def _sendSelection(blob, type, size, event, ui):
   """
   err = Xerror.CatchError()
   prop = event.property if event.property else event.target
-  event.requestor.change_property(prop, type, size, str(blob), onerror=err)
+  if type in (Xatom.STRING, Xatom.TEXT):
+    blob = str(blob) # blob may be utf8
+  event.requestor.change_property(prop, type, size, blob, onerror=err)
   if err.get_error():
     _refuseSelectionRequest(event)
     raise Exception(str(err.get_error()))
@@ -106,7 +108,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
     """ walk up the tree looking for a client window """
 
     def get_wm_client_leader(window):
-        d = window.get_full_property(display.intern_atom('WM_CLIENT_LEADER', True), Xatom.WINDOW)
+        d = window.get_full_property(Xatom.WM_CLIENT_LEADER, Xatom.WINDOW)
         if d is None or d.format != 32 or len(d.value) < 1:
           return None
         else:
@@ -118,7 +120,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
       comm = window.get_full_property(Xatom.WM_COMMAND, Xatom.STRING)
       name = window.get_wm_name()
       # Nokia N900 uses _NET_WM_NAME instead of WM_NAME:
-      netname = window.get_full_property(display.intern_atom('_NET_WM_NAME', True), display.intern_atom('UTF8_STRING', True))
+      netname = window.get_full_property(Xatom._NET_WM_NAME, Xatom.UTF8_STRING)
       leadercomm = None
 
       # Only one top-level window for a given client has WM_COMMAND. Find the
@@ -151,7 +153,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
         (e.selection not in selections) or # Requesting a different selection
         (e.owner != win)): # We aren't the owner
       return _refuseSelectionRequest(e)
-    if (e.target in (Xatom.STRING, XA_TEXT)):
+    if (e.target in (Xatom.STRING, Xatom.TEXT)):
       (requestor, host) = findClientWindow(e.requestor, ui)
       if requestor.lower() in blacklist:
         if requestor != _prev_requestor:
@@ -163,12 +165,11 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
       e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
       _sendSelection(blob, Xatom.STRING, 8, e, ui)
       return True
-    elif (e.target == XA_TIMESTAMP): #untested
-      ui.status('INFO: Untested XA_TIMESTAMP')
-      _sendSelection(timestamp, XA_TIMESTAMP, 32, e, ui)
-    elif (e.target == XA_TARGETS): # This *seems* to work... though I am unconfident that the length is sent correctly. There may be a better way to do this.
-      import struct
-      _sendSelection(struct.pack('IIII', *map(lambda x: int(x), [XA_TARGETS, XA_TIMESTAMP, XA_TEXT, Xatom.STRING])), XA_TARGETS, 32, e, ui)
+    elif (e.target == Xatom.TIMESTAMP): #untested
+      ui.status('INFO: Untested Xatom.TIMESTAMP')
+      _sendSelection(timestamp, Xatom.TIMESTAMP, 32, e, ui)
+    elif (e.target == Xatom.TARGETS):
+      _sendSelection([Xatom.TARGETS, Xatom.TIMESTAMP, Xatom.TEXT, Xatom.STRING], Xatom.ATOM, 32, e, ui)
     else:
       return _refuseSelectionRequest(e)
     return False
@@ -189,9 +190,12 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
   screen = display.screen()
   win = screen.root.create_window(0,0,1,1,0,0)
 
-  XA_TEXT = display.intern_atom('TEXT', True)
-  XA_TARGETS = display.intern_atom('TARGETS', True)
-  XA_TIMESTAMP = display.intern_atom('TIMESTAMP', True)
+  Xatom.TEXT = display.intern_atom('TEXT', True)
+  Xatom.TARGETS = display.intern_atom('TARGETS', True)
+  Xatom.TIMESTAMP = display.intern_atom('TIMESTAMP', True)
+  Xatom.WM_CLIENT_LEADER = display.intern_atom('WM_CLIENT_LEADER', True)
+  Xatom._NET_WM_NAME = display.intern_atom('_NET_WM_NAME', True)
+  Xatom.UTF8_STRING = display.intern_atom('UTF8_STRING', True)
 
   ui_fds = ui.mainloop.screen.get_input_descriptors()
   if ui_fds is None: ui_fds = []
