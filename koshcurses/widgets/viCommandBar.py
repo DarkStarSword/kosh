@@ -57,9 +57,12 @@ class viCommandBar(urwid.WidgetWrap):
       'incsearch': True,
     })
 
-  def update_status(self, status):
+  def update_status(self, status, append=False):
     if type(status) in (str, unicode):
-      self._status = urwid.Text(status)
+      if append and self._status.text:
+        self._status = urwid.Text(self._status.text + '\n' + status)
+      else:
+        self._status = urwid.Text(status)
     else:
       self._status = status
     self._container.footer = self._status

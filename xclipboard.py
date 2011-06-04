@@ -6,8 +6,11 @@ import select
 from ui import ui_tty, ui_null
 
 defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
+blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>']
 
 class XFailConnection(Exception): pass
+
+_prev_requestor = None
 
 def newTimestamp(display, window):
   """
@@ -38,6 +41,7 @@ def _refuseSelectionRequest(event):
       property = 0,
       time = event.time)
   event.requestor.send_event(resp, 0, 0)
+  return False
 
 def _sendSelection(blob, type, size, event, ui):
   """
@@ -45,7 +49,6 @@ def _sendSelection(blob, type, size, event, ui):
   type (with appropriate format size for the type - refer to the ICCCM) to the
   requester specified in the event.
   """
-  #ui.status('DEBUG: Sending %s to %s'%(repr(blob),event))
   err = Xerror.CatchError()
   prop = event.property if event.property else event.target
   event.requestor.change_property(prop, type, size, str(blob), onerror=err)
@@ -77,7 +80,7 @@ def _ownSelections(display, win, selections):
       raise Exception('Failed to own selection %i' % selection)
   return timestamp
 
-def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
+def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_null()):
   """
   Send a list of blobs via the clipboard (using X selections, cut buffers are
   not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
@@ -99,14 +102,41 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
 
   selections = txtselections[:]
 
-  def handleSelectionRequest(e, ui):
+  def findClientWindow(window, ui):
+    """ walk up the tree looking for a client window """
+    while True:
+      comm = window.get_full_property(Xatom.WM_COMMAND, Xatom.STRING)
+      name = window.get_wm_name()
+      if name or comm:
+        break
+      # pwsafe does this here:
+      # p = XmuClientWindow(xdisplay, w);
+      # if (w != p)
+      #   break; // this means we've found it
+      resp = window.query_tree()
+      root = resp.root; parent = resp.parent
+      if parent == root:
+        return ('<unknown>', window.get_wm_client_machine() or '<unknown>')
+      window = parent
+
+    requestor = name or comm
+    host = window.get_wm_client_machine()
+    return (requestor, host)
+
+  def handleSelectionRequest(e, field, record, ui):
+    global _prev_requestor
     if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
         (e.selection not in selections) or # Requesting a different selection
         (e.owner != win)): # We aren't the owner
-      _refuseSelectionRequest(e)
-      return False
+      return _refuseSelectionRequest(e)
     if (e.target in (Xatom.STRING, XA_TEXT)):
-      # TODO: Get window title and/or command line and host to report
+      (requestor, host) = findClientWindow(e.requestor, ui)
+      if requestor.lower() in blacklist:
+        if requestor != _prev_requestor:
+          ui.status("Ignoring request from %s@%s"%(requestor, host), append=True)
+          _prev_requestor = requestor
+        return _refuseSelectionRequest(e)
+      ui.status("Sending %s for '%s' to %s@%s"%(field.upper(), record, requestor, host), append=True)
       oldmask = e.requestor.get_attributes().your_event_mask
       e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
       _sendSelection(blob, Xatom.STRING, 8, e, ui)
@@ -118,7 +148,7 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
       import struct
       _sendSelection(struct.pack('IIII', *map(lambda x: int(x), [XA_TARGETS, XA_TIMESTAMP, XA_TEXT, Xatom.STRING])), XA_TARGETS, 32, e, ui)
     else:
-      _refuseSelectionRequest(e)
+      return _refuseSelectionRequest(e)
     return False
 
   # Opening the display prints 'Xlib.protocol.request.QueryExtension' to
@@ -146,8 +176,9 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
   select_fds = set([display] + [sys.stdin] + ui_fds)
   try:
     old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
+    ui.status('')
     for (field, blob) in blobs:
-      ui.status('Ready to send %s via %s... (enter skips, escape cancels)'%(field.upper(),str(txtselections)))
+      ui.status("Ready to send %s for '%s' via %s... (enter skips, escape cancels)"%(field.upper(),record,str(txtselections)), append=True)
       ui.mainloop.draw_screen()
       awaitingCompletion = []
       timestamp = _ownSelections(display, win, selections)
@@ -181,7 +212,7 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
             while display.pending_events():
               e = display.next_event()
               if e.type == X.SelectionRequest:
-                if handleSelectionRequest(e, ui):
+                if handleSelectionRequest(e, field, record, ui):
                   # Don't break immediately, transfer will not have finished.
                   # Wait until the property has been deleted by the requestor
                   awaitingCompletion.append((e.requestor, e.property))
@@ -206,7 +237,7 @@ def sendViaClipboard(blobs, txtselections = defSelections, ui=ui_null()):
                     # stuff here - the clipboard selection remained grabbed
                     # after destroying the window. This worked around it since
                     # I can't see what is wrong.
-    ui.status('Clipboard Cleared')
+    ui.status('Clipboard Cleared', append=True)
 
 if __name__ == '__main__':
   import sys

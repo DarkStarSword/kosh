@@ -65,7 +65,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
 
   def yank(self, size, key):
     import xclipboard
-    xclipboard.sendViaClipboard(self.showing.clipIter(), ui=self.ui)
+    xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
 
   def edit(self, size, key):
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
@@ -237,7 +237,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
   def yank(self, size, key):
     label = self._w.get_focus()[0].get_label()
     import xclipboard
-    xclipboard.sendViaClipboard([(label, self.entry[label])], ui=self.ui)
+    xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
 
   def runscript(self, size, key):
     label = self._w.get_focus()[0].get_label()
@@ -289,8 +289,8 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     # Necessary to get focus back
     self.container.set_focus(0)
     
-  def status(self, status):
-    return self.vi.update_status(status)
+  def status(self, status, append=False):
+    return self.vi.update_status(status, append)
 
   def showModal(self, parent=None):
     self.mainloop = urwid.MainLoop(self)
