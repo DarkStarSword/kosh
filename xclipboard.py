@@ -104,23 +104,45 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
 
   def findClientWindow(window, ui):
     """ walk up the tree looking for a client window """
+
+    def get_wm_client_leader(window):
+        d = window.get_full_property(display.intern_atom('WM_CLIENT_LEADER', True), Xatom.WINDOW)
+        if d is None or d.format != 32 or len(d.value) < 1:
+          return None
+        else:
+          cls = window.display.get_resource_class('window', type(window))
+          return cls(window.display, d.value[0])
+
+    host = window.get_wm_client_machine()
     while True:
       comm = window.get_full_property(Xatom.WM_COMMAND, Xatom.STRING)
       name = window.get_wm_name()
-      if name or comm:
+      # Nokia N900 uses _NET_WM_NAME instead of WM_NAME:
+      netname = window.get_full_property(display.intern_atom('_NET_WM_NAME', True), display.intern_atom('UTF8_STRING', True))
+      leadercomm = None
+
+      # Only one top-level window for a given client has WM_COMMAND. Find the
+      # leader top-level window (if we are looking at a top-level window) and
+      # check it's WM_COMMAND property.
+      #
+      # I don't see a requirement in the ICCCM that the client leader
+      # necessarily be the window with the WM_COMMAND property, it may end up
+      # being necessary to iterate all the windows with the same
+      # WM_CLIENT_LEADER to find the one window that has the WM_COMMAND.
+      leader = get_wm_client_leader(window)
+      if leader is not None and leader != window:
+        leadercomm = leader.get_full_property(Xatom.WM_COMMAND, Xatom.STRING)
+
+      requestor = name or netname or comm or leadercomm
+      if hasattr(requestor, 'value'):
+        requestor = requestor.value
+      if requestor:
         break
-      # pwsafe does this here:
-      # p = XmuClientWindow(xdisplay, w);
-      # if (w != p)
-      #   break; // this means we've found it
       resp = window.query_tree()
       root = resp.root; parent = resp.parent
       if parent == root:
-        return ('<unknown>', window.get_wm_client_machine() or '<unknown>')
+        return ('<unknown>', host)
       window = parent
-
-    requestor = name or comm
-    host = window.get_wm_client_machine()
     return (requestor, host)
 
   def handleSelectionRequest(e, field, record, ui):
