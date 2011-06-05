@@ -102,6 +102,12 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
       ui.status('Error importing python-Xlib, X clipboard integration unavailable')
       return
 
+  # Can't do this in the function definition - it seems that a .remove()
+  # affects the default. That would be expected if it were assigned as a
+  # reference to the default list, but even happens when the [:] syntax is
+  # used to copy the list. I guess that must be an unexpected side effect of
+  # the function definition only excuting once when the file is loaded?
+  txtselections = txtselections[:]
   selections = txtselections[:]
 
   def findClientWindow(window, ui):
@@ -252,9 +258,17 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
                   timeout = 0.01
               elif e.type == X.SelectionClear:
                 if e.time == X.CurrentTime or e.time >= timestamp:
-                  # If transfer is in progress it should be allowed to complete:
-                  if awaitingCompletion == []: return
-                  timeout = 0.01
+                  # If we lost CLIPBOARD (explicit copy) or no longer control any selection, abort:
+                  name = display.get_atom_name(e.atom)
+                  selections.remove(e.atom)
+                  txtselections.remove(name)
+                  if name == 'CLIPBOARD' or not selections:
+                    # If transfer is in progress it should be allowed to complete:
+                    if awaitingCompletion == []: return
+                    timeout = 0.01
+                  else:
+                    ui.status("Lost control of %s, still ready to send %s via %s..."%(name, field.upper() ,str(txtselections)), append=True)
+                    ui.mainloop.draw_screen()
             ui.mainloop.draw_screen()
   finally:
     ui_tty.restore_cbreak(old)
