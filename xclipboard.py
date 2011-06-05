@@ -166,7 +166,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
           ui.status("Ignoring request from %s@%s"%(requestor, host), append=True)
           _prev_requestor = requestor
         return _refuseSelectionRequest(e)
-      ui.status("Sending %s for '%s' to %s@%s"%(field.upper(), record, requestor, host), append=True)
+      ui.status("Sent %s for '%s' via %s to %s@%s"%(field.upper(), record, display.get_atom_name(e.selection), requestor, host), append=True)
       oldmask = e.requestor.get_attributes().your_event_mask
       e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
       _sendSelection(blob, Xatom.STRING, 8, e, ui)
