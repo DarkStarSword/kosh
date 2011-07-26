@@ -168,8 +168,14 @@ class passEntry(dict):
     n = passEntry(self._masterKey, name=self.name)
     dict.__init__(n, self)
     n.meta = copy.copy(self.meta)
-    n.meta['RenamedFrom'] = self.name
+    n.meta['RenamedFrom'] = self.newest().name
     return n
+
+  def newest(self):
+    newest = self
+    while newest.newer:
+      newest = newest.newer
+    return newest
 
   def __str__(self):
     return self.BLOB_PREFIX + self._blob
