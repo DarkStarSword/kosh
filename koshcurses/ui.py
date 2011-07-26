@@ -30,7 +30,10 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.selection = 0
     self._set_w(self.lb)
     if len(self.visibleEntries):
-      self.showing = self.db[self.lb.get_focus()[0].get_label()]
+      try:
+        self.showing = self.db[self.lb.get_focus()[0].get_label()]
+      except KeyError:
+        return self.search(None)
       self.pwForm.show(self.showing)
 
   def keypress(self, size, key):
@@ -98,7 +101,16 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.lb = None
     self.ui = ui
 
+  def showNone(self):
+    self.entry = None
+    self._set_w(urwid.SolidFill())
+    self.fields = None
+    self.content = None
+    self.lb = None
+
   def show(self, entry):
+    if entry is None:
+      return self.showNone()
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
       [ urwid.Button(x, self.reveal_field) for x in entry ] + \
@@ -213,11 +225,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.okCallback(self.entry)
 
   def discard(self, *args):
-    self.entry = None
-    self._set_w(urwid.SolidFill())
-    self.fields = None
-    self.content = None
-    self.lb = None
+    self.showNone()
     self.cancel()
 
   def keypress(self, size, key):
