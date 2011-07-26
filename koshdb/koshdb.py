@@ -168,6 +168,7 @@ class passEntry(dict):
     n = passEntry(self._masterKey, name=self.name)
     dict.__init__(n, self)
     n.meta = copy.copy(self.meta)
+    n.meta['RenamedFrom'] = self.name
     return n
 
   def __str__(self):
@@ -359,22 +360,53 @@ class KoshDB(dict):
   def __setitem__(self, name, val):
     assert(name == val.name)
     val.timestamp()
-    if name in self:
-      if self[name] == val:
+    if 'RenamedFrom' in val.meta:
+      oldname = val.meta['RenamedFrom']
+      if oldname == name:
+        del val.meta['RenamedFrom']
+    else:
+      oldname = name
+    # FIXME: there is an edge case I haven't handled where renamed or deleted
+    # entries that have been stored out of order will not end up, so the old
+    # names may show up. There is a related edge case of any out of order
+    # entries causing the history to be out of order.
+    # FIXME: Handle the edge case where one entry has been renamed over
+    # another - it's valid, but be sure we don't lose the history of either
+    # path
+    if oldname in self:
+      if self[oldname] == val:
         return
-      (new, old) = self.resolveConflict(self[name], val)
+      (new, old) = self.resolveConflict(self[oldname], val)
       # FIXME: Bogus timestamp in future
-      dict.__setitem__(self, name, new)
+      if 'RenamedFrom' in new.meta:
+        # Don't use del or we will recurse:
+        dict.__delitem__(self, old.name)
+      if 'Deleted' in new.meta:
+        # Don't use del or we will recurse:
+        dict.__delitem__(self, old.name)
+        self._oldEntries.append(new)
+      else:
+        dict.__setitem__(self, name, new)
       self._oldEntries.append(old)
     else:
+      if 'Deleted' in val.meta:
+        # Edge case - deleting a non-(yet?)-existant entry
+        self._oldEntries.append(val)
       dict.__setitem__(self, name, val)
     self._lines.append(val)
+
+  def __delitem__(self, item):
+    n = self[item.name].clone()
+    n.clear()
+    n.meta = {'Deleted': True}
+    self[item.name] = n
 
   @staticmethod
   def resolveConflict(entry1, entry2):
     (new,old) = [(entry1,entry2),(entry2,entry1)][entry2 >= entry1]
     new.older = old
     old.newer = new
+    # FIXME: Ensure entire chain is sorted
     return (new, old)
 
   def _unlockMasterKey(self, idx, blob, passphrases, prompt):

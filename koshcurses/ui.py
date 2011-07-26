@@ -12,6 +12,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       'f6': 'showNewer',
       'y': 'yank',
       'e': 'edit',
+      'D': 'delete',
       }
 
   def __init__(self, db, pwForm, ui):
@@ -72,6 +73,12 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
 
   def edit(self, size, key):
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
+
+  def delete(self, size, key):
+    del self.db[self.showing]
+    self.showing = None
+    self.refresh()
+    self.db.write()
 
   def search(self, search):
     import string
