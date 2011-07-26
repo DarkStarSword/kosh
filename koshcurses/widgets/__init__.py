@@ -27,6 +27,7 @@ class koshEdit(urwid.Edit):
 class passwordEdit(keymapwid, koshEdit):
   keymap = {
       'f8': 'toggleReveal',
+      'ctrl r': 'toggleReveal',
       }
   def __init__(self, caption="", edit_text="", multiline=False,
           align=urwid.LEFT, wrap=urwid.CLIP, allow_tab=False,

@@ -9,7 +9,9 @@ import time
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
       'f5': 'showOlder',
+      'ctrl p': 'showOlder',
       'f6': 'showNewer',
+      'ctrl n': 'showNewer',
       'y': 'yank',
       'e': 'edit',
       'D': 'delete',
