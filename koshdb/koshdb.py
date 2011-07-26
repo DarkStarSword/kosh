@@ -153,7 +153,7 @@ class passEntry(dict):
     self._timestamp = None
     self.older = None
     self.newer = None
-    self.meta = []
+    self.meta = {}
     if blob is not None:
       assert(blob.startswith(self.BLOB_PREFIX))
       self._blob = blob[len(self.BLOB_PREFIX):]
