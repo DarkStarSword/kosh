@@ -34,6 +34,7 @@ new_pass_prompts = hashable_list([
 confirm_pass_prompts = hashable_list([
     'Re-type new password: ',
     'Retype new UNIX password: ',
+    'Retype new password: ',
     'Re-enter new password: ',
     'Reenter New Password: ',
     ])
