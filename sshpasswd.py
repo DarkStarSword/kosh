@@ -171,13 +171,13 @@ class LoginFailure(Exception): pass
 def replace_synch_original_prompt (self):
   import time
   """
-  Overriding the pxssh method to allow the inital read to timeout if there is
+  Overriding the pxssh method to allow the initial read to timeout if there is
   nothing to read.
 
   Also, if the first attempt fails, try again with a larger round trip time for
   the prompt to appear after sending an enter press.
   """
-  for rtt in [0.5, 1.5]:
+  for rtt in [0.5, 1.5, 3.0, 5.0, 10.0]:
       try:
         self.read_nonblocking(size=10000,timeout=1) # GAS: Clear out the cache before getting
       except pexpect.TIMEOUT: pass
@@ -344,7 +344,7 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
   s.logfile_send = log
   s.force_password = force_password
   try:
-    s.login(host, username, password, original_prompt=r"[#$>] ")
+    s.login(host, username, password, original_prompt=r"[#$>] ", login_timeout=30)
   except pxssh.ExceptionPxssh, e:
     raise LoginFailure(str(e))
   except pexpect.EOF, e:
