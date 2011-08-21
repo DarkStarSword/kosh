@@ -352,7 +352,7 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
   except pexpect.EOF, e:
     raise LoginFailure('EOF: Check the hostname')
   except pexpect.TIMEOUT, e:
-    raise
+    raise LoginFailure('Timeout: Check the network')
   #finally:
     # print log
   return s
@@ -403,9 +403,9 @@ def change_ssh_passwd(ui, host, username, oldpass, newpass):
   # Verify:
   ui._cprint('bright yellow', 'Verifying password change on %s...'%host)
   ui._cprint('yellow', 'trying new password...')
-  if verify_ssh_passwd(ui, host, username, newpass):
-    return True
-  else:
+  try:
+    if verify_ssh_passwd(ui, host, username, newpass):
+      return True
     ui._cprint('bright red', ' Failure')
     ui._cprint('yellow', 'Trying old password...')
     if verify_ssh_passwd(ui, host, username, oldpass):
@@ -414,11 +414,12 @@ def change_ssh_passwd(ui, host, username, oldpass, newpass):
         # If we possibly failed earlier, that exception will have more detail than we know now, so raise it:
         raise verifyException
       raise PasswordChangeFailure('Failed to verify password change, but old password still works')
-    else:
-      ui._cprint('bright red', ' Verification Failed!')
-      if verifyException is not None:
-        raise verifyException
-      raise PasswordChangeVerifyFailure()
+    ui._cprint('bright red', ' Verification Failed!')
+    if verifyException is not None:
+      raise verifyException
+    raise PasswordChangeVerifyFailure()
+  except pexpect.TIMEOUT:
+    raise PasswordChangeVerifyFailure()
 
 # Proposed API:
 # change takes: 
@@ -579,10 +580,13 @@ def main(ui):
     if proto == 'verifyssh':
       try:
         ui._cprint('bright yellow', 'Verifying password on %s...'%host)
-        if verify_ssh_passwd(ui, host, username, oldpass):
-          ui._cprint('bright green', 'Ok')
-        else:
-          ui._cprint('bright red', 'Failed!')
+        try:
+          if verify_ssh_passwd(ui, host, username, oldpass):
+            ui._cprint('bright green', 'Ok')
+          else:
+            ui._cprint('bright red', 'Failed!')
+        except pexpect.TIMEOUT, e:
+          ui._cprint('bright red', 'timeout')
       except pexpect.TIMEOUT, e:
         ui._cprint('bright red', 'timeout')
       except _PasswordChangeException, e:
