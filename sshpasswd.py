@@ -584,11 +584,11 @@ def main(ui):
       except pexpect.TIMEOUT, e:
         ui._cprint('bright red', 'timeout')
       except _PasswordChangeException, e:
-        ui._cprint('bright red', 'Exception verifying password on %s:'%(host, e))
+        ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
       except Exception, e:
         import traceback
         ui._cprint('red', traceback.format_exc())
-        ui._cprint('bright red', 'Exception verifying password on %s:'%(host, e))
+        ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
 
     if proto == 'ssh':
       try:
