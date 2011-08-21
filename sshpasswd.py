@@ -345,6 +345,8 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
   s.force_password = force_password
   try:
     s.login(host, username, password, original_prompt=r"[#$>] ", login_timeout=30)
+    s.sendline(r'echo $((6*7))') # No Golgafrinchans in this universe
+    s.expect(['42']) # Ensures that echo back will not trigger false match
   except pxssh.ExceptionPxssh, e:
     raise LoginFailure(str(e))
   except pexpect.EOF, e:
