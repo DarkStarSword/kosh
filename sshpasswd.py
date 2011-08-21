@@ -184,15 +184,24 @@ def replace_synch_original_prompt (self):
       time.sleep(0.1)
       self.sendline()
       time.sleep(rtt)
-      x = self.read_nonblocking(size=1000,timeout=1)
+      try:
+        x = self.read_nonblocking(size=1000,timeout=1)
+      except:
+        continue
       time.sleep(0.1)
       self.sendline()
       time.sleep(rtt)
-      a = self.read_nonblocking(size=1000,timeout=1)
+      try:
+        a = self.read_nonblocking(size=1000,timeout=1)
+      except:
+        continue
       time.sleep(0.1)
       self.sendline()
       time.sleep(rtt)
-      b = self.read_nonblocking(size=1000,timeout=1)
+      try:
+        b = self.read_nonblocking(size=1000,timeout=1)
+      except:
+        continue
       ld = self.levenshtein_distance(a,b)
       len_a = len(a)
       if len_a == 0:
