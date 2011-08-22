@@ -248,9 +248,6 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
                   # Don't break immediately, transfer will not have finished.
                   # Wait until the property has been deleted by the requestor
                   awaitingCompletion.append((e.requestor, e.property))
-                  # FIXME: Release other selections
-                  selections = [e.selection]
-                  txtselections = [display.get_atom_name(e.selection)]
               elif e.type == X.PropertyNotify:
                 if (e.window, e.atom) in awaitingCompletion \
                     and e.state == 1: # Deleted
@@ -263,9 +260,8 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
                 if e.time == X.CurrentTime or e.time >= timestamp:
                   # If we lost CLIPBOARD (explicit copy) or no longer control any selection, abort:
                   name = display.get_atom_name(e.atom)
-                  if e.atom in selections:
-                    selections.remove(e.atom)
-                    txtselections.remove(name)
+                  selections.remove(e.atom)
+                  txtselections.remove(name)
                   if name == 'CLIPBOARD' or not selections:
                     # If transfer is in progress it should be allowed to complete:
                     if awaitingCompletion == []: return
