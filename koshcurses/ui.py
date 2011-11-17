@@ -12,6 +12,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       'ctrl p': 'showOlder',
       'f6': 'showNewer',
       'ctrl n': 'showNewer',
+      'g': 'goto',
       'y': 'yank',
       'e': 'edit',
       'D': 'delete',
@@ -68,6 +69,29 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     if self.showing.newer is not None:
       self.showing = self.showing.newer
       self.pwForm.show(self.showing)
+
+  def goto(self, size, key):
+    def launch(url):
+      import subprocess
+      try:
+        self.ui.status("Going to %s" % url)
+        subprocess.check_call(['sensible-browser', url]) # FIXME HACK: Debian specific, have a setting and try to detect default
+      except subprocess.CalledProcessError, e:
+        self.ui.status("Exception calling web browser: %s" % str(e));
+    import threading
+
+    # TODO: Refactor this into a geturl() function in the db & check metadata for URL type fields
+    if 'URL' in self.showing:
+      url = self.showing['URL']
+    elif 'url' in self.showing:
+      url = self.showing['URL']
+    else:
+      self.ui.status("No URL in password record");
+      return
+
+    t = threading.Thread(target=launch, args=[url])
+    t.daemon = True
+    t.start()
 
   def yank(self, size, key):
     import xclipboard
