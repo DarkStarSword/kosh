@@ -28,6 +28,7 @@ class passwordEdit(keymapwid, koshEdit):
   keymap = {
       'f8': 'toggleReveal',
       'ctrl r': 'toggleReveal',
+      'ctrl g': 'generate_password', # FIXME HACK: This isn't the right place for this
       }
   def __init__(self, caption="", edit_text="", multiline=False,
           align=urwid.LEFT, wrap=urwid.CLIP, allow_tab=False,
@@ -51,6 +52,18 @@ class passwordEdit(keymapwid, koshEdit):
     if not self.revealable: return key
     self.reveal = not self.reveal
     self._invalidate()
+
+  def generate_password(self, size, key):
+    import subprocess
+    # HACK: Multiple tools available, allow user to select, or fall back on
+    # default built in
+    try:
+      passwd = subprocess.check_output('pwgen -nc 12'.split()).strip()
+    except subprocess.CalledProcessError:
+      # FIXME: I don't have the ui here and can't notify, but this is the wrong
+      # place to do this anyway, just a hack
+      return
+    self.set_edit_text(passwd)
 
 class LineColumns(urwid.WidgetWrap):
   vline = urwid.SolidFill(utf8.symbol('BOX DRAWINGS LIGHT VERTICAL'))
