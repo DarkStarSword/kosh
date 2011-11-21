@@ -205,7 +205,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
 
   ui_fds = ui.mainloop.screen.get_input_descriptors()
   if ui_fds is None: ui_fds = []
-  select_fds = set([display] + [sys.stdin] + ui_fds)
+  select_fds = set([display] + ui_fds)
   try:
     old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
     ui.status('')
@@ -231,7 +231,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
           break
 
         for fd in readable:
-          if fd == sys.stdin:
+          if fd == sys.stdin.fileno():
             char = sys.stdin.read(1)
             if char == '\n':
               skip = True
