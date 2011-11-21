@@ -988,7 +988,7 @@ class urlvcr(object):
         else:
           ui._cprint('bright red', 'HTTP status code: %s: %s'%(e.code, e.msg))
           raise
-      except (urllib2.URLError, socket.timeout), e:
+      except (urllib2.URLError, socket.timeout, ssl.SSLError), e:
         if hasattr(e, 'reason'):
           ui._cprint('bright red', 'Failed to reach server: %s'%e.reason)
         else:
