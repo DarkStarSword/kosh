@@ -9,6 +9,9 @@ import Crypto.Cipher.AES
 #FIXME: strxor not in crypto lib on n900
 try:
   import Crypto.Util.strxor as strxor
+  # strxor is a package on N9 (?):
+  if hasattr(strxor, 'strxor'):
+    strxor = strxor.strxor
 except ImportError:
   def strxor(str1, str2):
     if len(str1) != len(str2):
