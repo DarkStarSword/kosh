@@ -5,6 +5,7 @@ import urwid
 import weakref
 import widgets
 import time
+import err
 
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -336,3 +337,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   def showModal(self, parent=None):
     self.mainloop = urwid.MainLoop(self)
     self.mainloop.run()
+
+  def show_traceback(exception):
+    import traceback
+    err.show_err(traceback.format_exc())

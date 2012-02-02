@@ -32,7 +32,7 @@ def getParameters():
     parser.error('Too many arguments')
   return options
 
-@handleErr(koshcurses.err.showErr)
+@handleErr(koshcurses.err.show_err_exit)
 def main():
   import koshdb,os
   options = getParameters()

@@ -8,6 +8,8 @@ from ui import ui_tty, ui_null
 defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
 blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>']
 
+# I don't want to use any exception provided by python-xlib, in case it is not
+# installed, which I want to handle gracefully
 class XFailConnection(Exception): pass
 
 _prev_requestor = None
@@ -82,7 +84,7 @@ def _ownSelections(display, win, selections):
       raise Exception('Failed to own selection %i' % selection)
   return timestamp
 
-def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_null()):
+def _sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_null()):
   """
   Send a list of blobs via the clipboard (using X selections, cut buffers are
   not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
@@ -198,10 +200,10 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
     Xlib.xauth.Xauthority.__init__ = tmp
     try:
       display = Xlib.display.Display()
-    except Xerror.DisplayError:
-      raise XFailConnection()
-  except Xerror.DisplayError:
-    raise XFailConnection()
+    except Xerror.DisplayError, e:
+      raise XFailConnection(str(e))
+  except Xerror.DisplayError, e:
+    raise XFailConnection(str(e))
   finally:
     sys.stdout = saved_stdout
   screen = display.screen()
@@ -289,6 +291,19 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
                     # after destroying the window. This worked around it since
                     # I can't see what is wrong.
     ui.status('Clipboard Cleared', append=True)
+
+def sendViaClipboard(*a, **kw):
+  def ui():
+    if 'ui' in kw: return kw['ui']
+    else: return ui_null()
+  try:
+    return _sendViaClipboard(*a, **kw)
+  except XFailConnection, e:
+    ui().status("Error connecting to X Display: %s" % str(e))
+  except Exception, e:
+    # Let's not kill the whole password manager
+    # FIXME: standardise this for all UIs
+    ui().show_traceback()
 
 if __name__ == '__main__':
   import sys
