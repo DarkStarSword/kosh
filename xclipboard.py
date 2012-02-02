@@ -19,7 +19,7 @@ def freeze_proc(exe, ui):
   global frozen_procs
   for pid in map(int, filter(str.isdigit, os.listdir('/proc'))):
     try:
-      if exe != os.readlink('/proc/%d/exe'%pid):
+      if exe != open('/proc/%d/cmdline'%pid).read().split('\0')[0]:
         continue
     except:
       continue
