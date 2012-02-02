@@ -6,6 +6,7 @@ import select
 from ui import ui_tty, ui_null
 
 defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
+#blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>', 'clipboard']
 blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>']
 
 # I don't want to use any exception provided by python-xlib, in case it is not
@@ -13,6 +14,9 @@ blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>']
 class XFailConnection(Exception): pass
 
 _prev_requestor = None
+
+DEBUG = False
+# DEBUG = True
 
 def newTimestamp(display, window):
   """
@@ -123,7 +127,7 @@ def _sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui
           cls = window.display.get_resource_class('window', type(window))
           return cls(window.display, d.value[0])
 
-    host = window.get_wm_client_machine()
+    host = window.get_wm_client_machine() or '<unknown>'
     while True:
       comm = window.get_full_property(Xatom.WM_COMMAND, Xatom.STRING)
       name = window.get_wm_name()
@@ -157,28 +161,38 @@ def _sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui
 
   def handleSelectionRequest(e, field, record, ui):
     global _prev_requestor
+    if DEBUG:
+      (requestor, host) = findClientWindow(e.requestor, ui)
+      ui.status('XSelectionRequest %s@%s requesting %s' % (requestor, host, display.get_atom_name(e.target)), append=True)
     if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
         (e.selection not in selections) or # Requesting a different selection
         (e.owner != win)): # We aren't the owner
+      if DEBUG:
+        ui.status('Refusing invalid selection request', append=True)
       return _refuseSelectionRequest(e)
     if (e.target in (Xatom.STRING, Xatom.TEXT)):
-      (requestor, host) = findClientWindow(e.requestor, ui)
+      if not DEBUG:
+        (requestor, host) = findClientWindow(e.requestor, ui)
       if requestor.lower() in blacklist:
+        if DEBUG:
+          ui.status("Ignoring request for %s from %s@%s"%(display.get_atom_name(e.target), requestor, host), append=True) # Remove this - too spammy
         if requestor != _prev_requestor:
-          ui.status("Ignoring request from %s@%s"%(requestor, host), append=True)
+          if not DEBUG:
+            ui.status("Ignoring request from %s@%s"%(requestor, host), append=True)
           _prev_requestor = requestor
         return _refuseSelectionRequest(e)
       ui.status("Sent %s for '%s' via %s to %s@%s"%(field.upper(), record, display.get_atom_name(e.selection), requestor, host), append=True)
       oldmask = e.requestor.get_attributes().your_event_mask
       e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
-      _sendSelection(blob, Xatom.STRING, 8, e, ui)
+      _sendSelection(blob, e.target, 8, e, ui)
       return True
-    elif (e.target == Xatom.TIMESTAMP): #untested
-      ui.status('INFO: Untested Xatom.TIMESTAMP')
-      _sendSelection(timestamp, Xatom.TIMESTAMP, 32, e, ui)
+    elif (e.target == Xatom.TIMESTAMP):
+      _sendSelection([timestamp], Xatom.INTEGER, 32, e, ui)
     elif (e.target == Xatom.TARGETS):
       _sendSelection([Xatom.TARGETS, Xatom.TIMESTAMP, Xatom.TEXT, Xatom.STRING], Xatom.ATOM, 32, e, ui)
     else:
+      if DEBUG:
+        ui.status("Refusing unknown target", append=True)
       return _refuseSelectionRequest(e)
     return False
 
@@ -223,22 +237,31 @@ def _sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui
     old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
     ui.status('')
     for (field, blob) in blobs:
-      ui.status("Ready to send %s for '%s' via %s... (enter skips, escape cancels)"%(field.upper(),record,str(txtselections)), append=True)
-      ui.mainloop.draw_screen()
       awaitingCompletion = []
       timestamp = _ownSelections(display, win, selections)
+      ui.status("Ready to send %s for '%s' via %s... (enter skips, escape cancels)"%(field.upper(),record,str(txtselections)), append=True)
+      ui.mainloop.draw_screen()
 
       timeout = None
       skip = False
       while 1:
-        if skip and awaitingCompletion == []: break
-        while True:
-          try:
-            (readable, ign, ign) = select.select(select_fds, [], [], timeout)
-          except select.error,e:
-            if e.args[0] == 4: continue # Interrupted system call
-            raise
+        if skip and awaitingCompletion == []:
           break
+        if display.pending_events():
+          readable = [display]
+        else:
+          while True:
+            try:
+              # BUG RACE XXX DAMN YOU !?!
+              # seems that select on the display only returns when something
+              # new comes in, if there is already data that could be read
+              # select will block. The above test for pending_events reduces,
+              # but does not eliminate this race.
+              (readable, ign, ign) = select.select(select_fds, [], [], timeout)
+            except select.error,e:
+              if e.args[0] == 4: continue # Interrupted system call
+              raise
+            break
 
         if not readable and awaitingCompletion == []:
           break
@@ -262,8 +285,14 @@ def _sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui
                   # Wait until the property has been deleted by the requestor
                   awaitingCompletion.append((e.requestor, e.property))
               elif e.type == X.PropertyNotify:
+                if DEBUG:
+                  (requestor, host) = findClientWindow(e.window, ui)
+                  ui.status('XPropertyNotify: %s@%s property %#x: %i' % (requestor, host, e.atom, e.state), append=True)
                 if (e.window, e.atom) in awaitingCompletion \
                     and e.state == 1: # Deleted
+                  # Remove further PropertyNotify events:
+                  oldmask = e.window.get_attributes().your_event_mask
+                  e.window.change_attributes(event_mask = oldmask & ~X.PropertyChangeMask)
                   awaitingCompletion.remove((e.window, e.atom))
                   # Some programs, such as firefox (when pasting with
                   # shift+insert), don't expect the selection to change suddenly
@@ -271,16 +300,31 @@ def _sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui
                   timeout = 0.01
               elif e.type == X.SelectionClear:
                 if e.time == X.CurrentTime or e.time >= timestamp:
-                  # If we lost CLIPBOARD (explicit copy) or no longer control any selection, abort:
                   name = display.get_atom_name(e.atom)
                   selections.remove(e.atom)
                   txtselections.remove(name)
-                  if name == 'CLIPBOARD' or not selections:
+                  (owner, host) = findClientWindow(e.window, ui)
+                  ui.status("Lost control of %s to %s@%s" % (name, owner, host), append=True)
+                  if not selections:
+                    # Don't control any selections, abort
                     # If transfer is in progress it should be allowed to complete:
-                    if awaitingCompletion == []: return
+                    if awaitingCompletion == []:
+                      return
                     timeout = 0.01
+                  elif name == 'CLIPBOARD':
+                    # Previously I took this to mean that the user had
+                    # explicitly copied something else to the clipboard and
+                    # that we should abort.
+                    # Unfortunately, the behaviour of the N9 requires that the
+                    # clipboard manager is used (grrr...), so we expect to lose
+                    # control of the clipboard.
+                    # Wait until the user presses enter before continuing.
+                    # FIXME: Actively clear clipboard once enter/escape pressed (how?)
+                    timeout = None # Prevent moving on to the next blob
+                    ui.status("Press enter to continue...", append=True)
+                    ui.mainloop.draw_screen()
                   else:
-                    ui.status("Lost control of %s, still ready to send %s via %s..."%(name, field.upper() ,str(txtselections)), append=True)
+                    ui.status("Still ready to send %s via %s..."%(field.upper() ,str(txtselections)), append=True)
                     ui.mainloop.draw_screen()
             ui.mainloop.draw_screen()
   finally:
@@ -292,12 +336,14 @@ def _sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui
                     # I can't see what is wrong.
     ui.status('Clipboard Cleared', append=True)
 
-def sendViaClipboard(*a, **kw):
+def sendViaClipboard(blobs, *a, **kw):
   def ui():
     if 'ui' in kw: return kw['ui']
     else: return ui_null()
   try:
-    return _sendViaClipboard(*a, **kw)
+    # HACK FOR N9:
+    for blob in blobs:
+      _sendViaClipboard([blob], *a, **kw)
   except XFailConnection, e:
     ui().status("Error connecting to X Display: %s" % str(e))
   except Exception, e:
