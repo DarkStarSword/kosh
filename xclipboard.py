@@ -6,7 +6,7 @@ import select
 from ui import ui_tty, ui_null
 
 defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
-blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>']
+blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>', 'qtcreator']
 
 class XFailConnection(Exception): pass
 
