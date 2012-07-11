@@ -223,22 +223,56 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.fields += [ widgets.passwordEdit(field+': ', script, revealable=True) ]
     self._edit()
     self._update()
-  def do_play_http_script(self):
+
+  def save_ui(fn):
+    def _save_ui(*args, **kwargs):
+      import other_ui.ui_tty as ui
+      import time
+      old = ui.reset()
+      try:
+        fn(*args, ui=ui, **kwargs)
+        time.sleep(5)
+      finally:
+        time.sleep(5)
+        ui.restore(old)
+    return _save_ui
+
+  def password_change_script(fn):
+    def wrap(self, *args, **kwargs):
+      username = self.entry['Username']
+      newpass = self.entry['Password']
+      # FIXME: Should walk list to find this
+      oldpass = self.entry['OldPassword']
+      value = self.entry[self._w.get_focus()[0].get_label()]
+      return fn(self, *args, username=username, newpass=newpass, oldpass=oldpass, value=value, **kwargs)
+    return wrap
+
+  @save_ui
+  @password_change_script
+  def do_play_http_script(self, username, newpass, oldpass, value, ui):
     import httppasswd
-    username = self.entry['Username']
-    newpass = self.entry['Password']
-    # FIXME: Should walk list to find this
-    oldpass = self.entry['OldPassword']
-    script = self.entry[self._w.get_focus()[0].get_label()]
-    import other_ui.ui_tty as ui
-    import time
-    old = ui.reset()
-    try:
-      httppasswd.main(ui(), script, username, oldpass, newpass)
-      time.sleep(5)
-    finally:
-      time.sleep(5)
-      ui.restore(old)
+    httppasswd.main(ui(), value, username, oldpass, newpass)
+
+  @save_ui
+  @password_change_script
+  def change_local_password(self, username, newpass, oldpass, value, ui):
+    import sshpasswd
+    sshpasswd.change_local(ui(), oldpass, newpass)
+
+  @save_ui
+  @password_change_script
+  def do_ssh_password_change(self, username, newpass, oldpass, value, ui):
+    import sshpasswd
+    if '@' in value:
+      (username, value) = value.split('@', 1)
+    sshpasswd.change_ssh(ui(), value, username, oldpass, newpass)
+
+  @save_ui
+  @password_change_script
+  def do_update_conf_password(self, username, newpass, oldpass, value, ui):
+    import sshpasswd
+    import os
+    sshpasswd.change_conf(ui(), os.path.expanduser(value), oldpass, newpass)
 
   def validate(self):
     return self.fname.get_edit_text() != ''
@@ -282,14 +316,22 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def runscript(self, size, key):
     label = self._w.get_focus()[0].get_label()
-    if not label.startswith('HACK_HTTP-SCRIPT_'):
-      self.ui.status("Selected field is not a script");
-      return None
     try:
-      self.do_play_http_script()
-    except:
-      self.ui.status("Exception while running HTTP password changing script");
-    return None
+      if label.startswith('HACK_HTTP-SCRIPT_'):
+        self.do_play_http_script()
+      elif label.startswith('HACK_LOCALHOST'):
+        self.change_local_password()
+      elif label.startswith('HACK_SSH_'):
+        self.do_ssh_password_change()
+      elif label.startswith('HACK_CONF_'):
+        self.do_update_conf_password()
+      else:
+        self.ui.status("Selected field is not a supported password changing script");
+        return None
+    except Exception, e:
+      # FIXME: Print traceback
+      self.ui.status("%s while running password changing script: %s" % (e.__class__.__name__, str(e)));
+      raise
 
   def _update(self):
     self.lb = urwid.ListBox(self.content)

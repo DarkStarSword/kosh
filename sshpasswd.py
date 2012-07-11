@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
+# TODO: Investigate paramiko as possible alternate to pxssh
+
 import pexpect
 
 class _PasswordChangeException(Exception): pass                     # Base class for exceptions
@@ -554,6 +556,56 @@ def parse_proto(url):
     'conf'      : lambda x : x,
     }.get(proto, unknown_proto)(url))
 
+def verify_ssh(ui, host, username, oldpass):
+  try:
+    ui._cprint('bright yellow', 'Verifying password on %s...'%host)
+    try:
+      if verify_ssh_passwd(ui, host, username, oldpass):
+        ui._cprint('bright green', 'Ok')
+      else:
+        ui._cprint('bright red', 'Failed!')
+    except pexpect.TIMEOUT, e:
+      ui._cprint('bright red', 'timeout')
+  except pexpect.TIMEOUT, e:
+    ui._cprint('bright red', 'timeout')
+  except _PasswordChangeException, e:
+    ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
+  except Exception, e:
+    import traceback
+    ui._cprint('red', traceback.format_exc())
+    ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
+
+def change_ssh(ui, host, username, oldpass, newpass):
+  try:
+    ui._cprint('bright yellow', 'Changing password on %s for user %s...'%(host, username))
+    if change_ssh_passwd(ui, host, username, oldpass, newpass):
+      ui._cprint('bright green', 'Success')
+  except _PasswordChangeException, e:
+    ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
+  except Exception, e:
+    import traceback
+    ui._cprint('red', traceback.format_exc())
+    ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
+
+def change_local(ui, oldpass, newpass):
+  try:
+    if change_tty_passwd(ui, oldpass, newpass):
+      ui._cprint('bright green', 'Success')
+  except _PasswordChangeException, e:
+    ui._cprint('bright red', 'Local password change failed: %s'%e)
+  except Exception, e:
+    import traceback
+    ui._cprint('red', traceback.format_exc())
+    ui._cprint('bright red', 'Local password change failed: %s'%e)
+
+def change_conf(ui, conf, oldpass, newpass):
+  try:
+    ui._cprint('bright yellow', 'Updating %s...'%conf)
+    update_config(ui, conf, oldpass, newpass)
+  except:
+    import traceback
+    ui._cprint('red', traceback.format_exc())
+    ui._cprint('bright red', 'Updating configuration file failed!')
 
 def main(ui):
   import getpass, sys
@@ -578,53 +630,16 @@ def main(ui):
       (username, host) = data
 
     if proto == 'verifyssh':
-      try:
-        ui._cprint('bright yellow', 'Verifying password on %s...'%host)
-        try:
-          if verify_ssh_passwd(ui, host, username, oldpass):
-            ui._cprint('bright green', 'Ok')
-          else:
-            ui._cprint('bright red', 'Failed!')
-        except pexpect.TIMEOUT, e:
-          ui._cprint('bright red', 'timeout')
-      except pexpect.TIMEOUT, e:
-        ui._cprint('bright red', 'timeout')
-      except _PasswordChangeException, e:
-        ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
-      except Exception, e:
-        import traceback
-        ui._cprint('red', traceback.format_exc())
-        ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
-
-    if proto == 'ssh':
-      try:
-        ui._cprint('bright yellow', 'Changing password on %s for user %s...'%(host, username))
-        if change_ssh_passwd(ui, host, username, oldpass, newpass):
-          ui._cprint('bright green', 'Success')
-      except _PasswordChangeException, e:
-        ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
-      except Exception, e:
-        import traceback
-        ui._cprint('red', traceback.format_exc())
-        ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
-
-    if proto == 'localhost':
-      try:
-        if change_tty_passwd(ui, oldpass, newpass):
-          ui._cprint('bright green', 'Success')
-      except _PasswordChangeException, e:
-        ui._cprint('bright red', 'Local password change failed: %s'%e)
-      except Exception, e:
-        import traceback
-        ui._cprint('red', traceback.format_exc())
-        ui._cprint('bright red', 'Local password change failed: %s'%e)
-
-    if proto == 'conf':
-      try:
-        ui._cprint('bright yellow', 'Updating %s...'%data)
-        update_config(ui, data, oldpass, newpass)
-      except:
-        ui._cprint('bright red', 'Updating configuration file failed!')
+      verify_ssh(ui, host, username, oldpass)
+    elif proto == 'ssh':
+      change_ssh(ui, host, username, oldpass, newpass)
+    elif proto == 'localhost':
+      change_local(ui, oldpass, newpass)
+    elif proto == 'conf':
+      change_conf(ui, conf, oldpass, newpass)
+    else:
+      # Redundant
+      ui._cprint('bright red', 'Unknown protocol %s', proto)
 
 if __name__ == '__main__':
   import ui.ui_tty
