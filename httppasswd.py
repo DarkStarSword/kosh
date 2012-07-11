@@ -893,6 +893,33 @@ def apply_action(ui, state, action):
     state.pop()
     raise ReplayFailure('Unhandled URLError')
 
+if hasattr(urllib2, 'HTTPSHandler'):
+  class HTTPSHandlerTLS1(urllib2.HTTPSHandler):
+    """
+    Workaround for some sites that fall over during the SSL handshake when
+    trying to negotiate using a version of TLS greater than 1.0. I see this on
+    one particular internal server, but I haven't dug very deep and I'm not
+    sure if this is an openssl bug or a server problem - a bug with the same
+    symptoms was fixed in openssl, but noted that some servers are buggy and
+    may still cause these symptoms.  This overrides the versions in the
+    standard library to pass ssl_version to wrap_socket.
+
+    https://bugs.launchpad.net/ubuntu/+source/openssl/+bug/965371
+    """
+    import httplib
+    class HTTPSConnectionTLS1(httplib.HTTPSConnection):
+      def connect(self):
+        "Connect to a host on a given (SSL) port."
+        sock = socket.create_connection((self.host, self.port),
+                                        self.timeout, self.source_address)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        self.sock = ssl.wrap_socket(sock, self.key_file, self.cert_file,
+                                    ssl_version = ssl.PROTOCOL_TLSv1)
+    def https_open(self, req):
+      return self.do_open(self.HTTPSConnectionTLS1, req)
+
 class urlvcr(object):
   """
   Linked list of states, including URL, cookies, etc. Used to produce a script
@@ -919,7 +946,9 @@ class urlvcr(object):
         self.user_agent = self.parent.user_agent
       else:
         self.cookies = cookielib.CookieJar()
-        self.handlers = [urllib2.HTTPCookieProcessor(self.cookies)]
+        # self.handlers = [urllib2.HTTPCookieProcessor(self.cookies)]
+        # XXX Workaround for SSL TLS version negotiation failure:
+        self.handlers = [urllib2.HTTPCookieProcessor(self.cookies), HTTPSHandlerTLS1]
         self.opener = urllib2.build_opener(*self.handlers)
         self.url = None
         self.info = None
