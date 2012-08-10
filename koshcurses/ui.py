@@ -285,10 +285,10 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     for field in self.fields:
       name = field.caption[:-2]
       txt = field.get_edit_text()
-      if txt == '':
-        del self.entry[name]
-      else:
+      if txt != '':
         self.entry[name] = txt
+      elif name in self.entry:
+        del self.entry[name]
     self.okCallback(self.entry)
 
   def discard(self, *args):
