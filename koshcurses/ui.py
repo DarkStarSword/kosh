@@ -329,9 +329,8 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
         self.ui.status("Selected field is not a supported password changing script");
         return None
     except Exception, e:
-      # FIXME: Print traceback
+      # FIXME: Print traceback, this status message might get overridden by "matched n entries"
       self.ui.status("%s while running password changing script: %s" % (e.__class__.__name__, str(e)));
-      raise
 
   def _update(self):
     self.lb = urwid.ListBox(self.content)
