@@ -1122,33 +1122,44 @@ if __name__ == '__main__':
   import json
   import base64
   import getpass
+  import optparse
 
   ui = ui.ui_tty()
 
-  username=None
-  oldpass=None
-  newpass=None
+  parser = optparse.OptionParser()
+  parser.add_option('-u', '--username',
+      help='Username to use, will prompt if not specified')
+  parser.add_option('-p', '--password',
+      help='Current password, will prompt if not specified (WARNING: Passing this on the command line may expose your password to other users!)')
+  parser.add_option('-n', '--new-password',
+      help='New password to set, will prompt if not specified (WARNING: Passing this on the command line may expose your password to other users!)')
 
-  if ui.confirm('Do you have credentials to paste?', False):
-    credentials = getpass.getpass('Paste them now and press enter. Echo is off: ')
-    credentials = json.loads(base64.decodestring(credentials))
-    credentials = json_str(credentials)
-    if 'username' in credentials: username=credentials['username']
-    if 'oldpass' in credentials: oldpass=credentials['oldpass']
-    if 'newpass' in credentials: newpass=credentials['newpass']
-  elif ui.confirm('Would you like to encode some now (NOTE: this is not using a secure encoding)?', False):
-    username = raw_input('Username: ')
-    oldpass = getpass.getpass('OLD Password: ')
-    newpass = getpass.getpass('NEW Password: ')
-    credentials = {}
-    if username: credentials['username'] = username
-    if oldpass: credentials['oldpass'] = oldpass
-    if newpass: credentials['newpass'] = newpass
-    credentials = base64.encodestring(json.dumps(credentials)).replace('\n','')
-    ui._print('Credentials: %s'%credentials)
+  (opts, args) = parser.parse_args()
+  username = opts.username
+  oldpass = opts.password
+  newpass = opts.new_password
 
-  if len(sys.argv) > 1:
-    for script in sys.argv[1:]:
+  if not (username or oldpass or newpass):
+    if ui.confirm('Do you have credentials to paste?', False):
+      credentials = getpass.getpass('Paste them now and press enter. Echo is off: ')
+      credentials = json.loads(base64.decodestring(credentials))
+      credentials = json_str(credentials)
+      if 'username' in credentials: username=credentials['username']
+      if 'oldpass' in credentials: oldpass=credentials['oldpass']
+      if 'newpass' in credentials: newpass=credentials['newpass']
+    elif ui.confirm('Would you like to encode some now (NOTE: this is not using a secure encoding)?', False):
+      username = raw_input('Username: ')
+      oldpass = getpass.getpass('OLD Password: ')
+      newpass = getpass.getpass('NEW Password: ')
+      credentials = {}
+      if username: credentials['username'] = username
+      if oldpass: credentials['oldpass'] = oldpass
+      if newpass: credentials['newpass'] = newpass
+      credentials = base64.encodestring(json.dumps(credentials)).replace('\n','')
+      ui._print('Credentials: %s'%credentials)
+
+  if len(args):
+    for script in args:
       s = base64.decodestring(script)
       ui._print('Replaying script: %s'%s)
       main(ui, s, username, oldpass, newpass)
