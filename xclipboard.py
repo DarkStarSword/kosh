@@ -171,9 +171,8 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
       e.requestor.change_attributes(event_mask = oldmask | X.PropertyChangeMask)
       _sendSelection(blob, Xatom.STRING, 8, e, ui)
       return True
-    elif (e.target == Xatom.TIMESTAMP): #untested
-      ui.status('INFO: Untested Xatom.TIMESTAMP')
-      _sendSelection(timestamp, Xatom.TIMESTAMP, 32, e, ui)
+    elif (e.target == Xatom.TIMESTAMP):
+      _sendSelection([timestamp], Xatom.TIMESTAMP, 32, e, ui)
     elif (e.target == Xatom.TARGETS):
       _sendSelection([Xatom.TARGETS, Xatom.TIMESTAMP, Xatom.TEXT, Xatom.STRING], Xatom.ATOM, 32, e, ui)
     else:
