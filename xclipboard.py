@@ -3,10 +3,15 @@
 
 Xlib = None
 import select
+import re
 from ui import ui_tty, ui_null
 
 defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
 blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>', 'qtcreator']
+blacklist_re = map(re.compile, [
+  'TightVNC: .*', # Still works (F8->local->remote requests as "popup@None") until it steals the PRIMARY selection
+])
+# TODO: Option to re-grab if PRIMARY selection is stolen. Maybe blacklist certain apps like TightVNC?
 
 class XFailConnection(Exception): pass
 
@@ -161,7 +166,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
       return _refuseSelectionRequest(e)
     if (e.target in (Xatom.STRING, Xatom.TEXT)):
       (requestor, host) = findClientWindow(e.requestor, ui)
-      if requestor.lower() in blacklist:
+      if requestor.lower() in blacklist or any([ pattern.match(requestor) for pattern in blacklist_re ]):
         if requestor != _prev_requestor:
           ui.status("Ignoring request from %s@%s"%(requestor, host), append=True)
           _prev_requestor = requestor
