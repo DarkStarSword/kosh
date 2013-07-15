@@ -105,7 +105,7 @@ class ui_tty(object):
         ui_tty._print(ch.encode('latin-1'))
     return ch
 
-  def status(self, msg):
+  def status(self, msg, *args, **kwargs):
     ui_tty._print(msg)
 
   @staticmethod
