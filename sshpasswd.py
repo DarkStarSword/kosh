@@ -23,6 +23,7 @@ old_pass_prompts = hashable_list([
     'Old Password: ',
     'Enter login\(LDAP\) password: ',
     '\(current\) UNIX password: ',
+    '\(current\) LDAP Password: ',
     ])
 
 new_pass_prompts = hashable_list([
