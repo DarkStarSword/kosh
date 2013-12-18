@@ -446,6 +446,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       self.fields = []
       self.editing = False
       self._ui = ui
+      self.override_action = None
       dict.__init__(self,d)
     def selectable(self):
       return True
