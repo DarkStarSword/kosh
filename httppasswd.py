@@ -221,7 +221,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError, e:
+      except HTMLParser.HTMLParseError as e:
         self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
@@ -507,7 +507,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError, e:
+      except HTMLParser.HTMLParseError as e:
         self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
@@ -614,7 +614,7 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError, e:
+      except HTMLParser.HTMLParseError as e:
         if self._ui:
           self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         else:
@@ -771,7 +771,7 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError, e:
+      except HTMLParser.HTMLParseError as e:
         self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
@@ -804,7 +804,7 @@ class action_save(urlvcr_action):
     try:
       fp = open(os.path.expanduser(filename),'wb')
       fp.write(state.body)
-    except Exception,e:
+    except Exception as e:
       ui._cprint('bright red', 'Exception while saving file: %s'%e)
     finally:
       if fp is not None:
@@ -883,12 +883,12 @@ def apply_action(ui, state, action):
     state.push(action)
   try:
     a.apply(ui, state, action[1])
-  except ReplayFailure, e:
+  except ReplayFailure as e:
     ui._cprint('bright red', 'Replay Failure, undoing last action: %s'%e)
     assert(a.changes_state)
     state.pop()
     raise
-  except urllib2.URLError, socket.timeout:
+  except (urllib2.URLError, socket.timeout):
     assert(a.changes_state)
     ui._cprint('red', 'Unhandled URLError, undoing last action')
     state.pop()
@@ -1011,14 +1011,14 @@ class urlvcr(object):
           # Python 2.5 does not support a timeout throught urllib2:
           socket.setdefaulttimeout(TIMEOUT)
           response = self.state.opener.open(request)
-      except urllib2.HTTPError, e:
+      except urllib2.HTTPError as e:
         if e.code == 401:
           ui._cprint('bright red', 'HTTP status code: %s: %s'%(e.code, e.msg))
           response = e
         else:
           ui._cprint('bright red', 'HTTP status code: %s: %s'%(e.code, e.msg))
           raise
-      except (urllib2.URLError, socket.timeout, ssl.SSLError), e:
+      except (urllib2.URLError, socket.timeout, ssl.SSLError) as e:
         if hasattr(e, 'reason'):
           ui._cprint('bright red', 'Failed to reach server: %s'%e.reason)
         else:
@@ -1040,7 +1040,7 @@ class urlvcr(object):
       tries -= 1
       try:
         self.state.body += response.read()
-      except (socket.timeout, urllib2.URLError, ssl.SSLError), e:
+      except (socket.timeout, urllib2.URLError, ssl.SSLError) as e:
         ui._cprint('bright red', 'Exception while reading page: %s'%e)
         if tries:
           ui._cprint('red', 'Retrying...')
@@ -1090,7 +1090,7 @@ def main(ui, script=None, username=None, oldpass=None, newpass=None):
   for action in action_seq:
     try:
       apply_action(ui, state, action)
-    except ReplayFailure, e:
+    except ReplayFailure as e:
       if interactive:
         ui._cprint('red', 'continuing since interactive...')
         continue

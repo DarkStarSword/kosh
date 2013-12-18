@@ -92,7 +92,7 @@ class ui_tty(object):
       while True:
         try:
           ch = fp.read(1)
-        except IOError, e:
+        except IOError as e:
           if e.args[0] == 4: continue # Interrupted system call
           raise
         break

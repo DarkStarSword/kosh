@@ -76,7 +76,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       try:
         self.ui.status("Going to %s" % url)
         subprocess.check_call(['sensible-browser', url]) # FIXME HACK: Debian specific, have a setting and try to detect default
-      except subprocess.CalledProcessError, e:
+      except subprocess.CalledProcessError as e:
         self.ui.status("Exception calling web browser: %s" % str(e));
     import threading
 
@@ -328,7 +328,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       else:
         self.ui.status("Selected field is not a supported password changing script");
         return None
-    except Exception, e:
+    except Exception as e:
       # FIXME: Print traceback, this status message might get overridden by "matched n entries"
       self.ui.status("%s while running password changing script: %s" % (e.__class__.__name__, str(e)));
 

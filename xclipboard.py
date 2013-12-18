@@ -226,7 +226,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
         while True:
           try:
             (readable, ign, ign) = select.select(select_fds, [], [], timeout)
-          except select.error,e:
+          except select.error as e:
             if e.args[0] == 4: continue # Interrupted system call
             raise
           break

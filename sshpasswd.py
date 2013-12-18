@@ -148,11 +148,11 @@ def change_tty_passwd(ui, oldpass, newpass, tty=None):
 
     return True
 
-  except _PasswordChangeReprompted, e:
+  except _PasswordChangeReprompted as e:
     mustclose = True
     ui._cprint('bright red','Got prompt for new password again')
     raise state(str(e))
-  except PasswordChangeFailure, e:
+  except PasswordChangeFailure as e:
     ui._cprint('bright red', str(e))
     #print log
     raise
@@ -350,11 +350,11 @@ def ssh_open(ui, host, username, password = '', force_password = True, filter=No
     s.login(host, username, password, original_prompt=r"[#$>] ", login_timeout=30)
     s.sendline(r'echo $((6*7))') # No Golgafrinchans in this universe
     s.expect(['42']) # Ensures that echo back will not trigger false match
-  except pxssh.ExceptionPxssh, e:
+  except pxssh.ExceptionPxssh as e:
     raise LoginFailure(str(e))
-  except pexpect.EOF, e:
+  except pexpect.EOF as e:
     raise LoginFailure('EOF: Check the hostname')
-  except pexpect.TIMEOUT, e:
+  except pexpect.TIMEOUT as e:
     raise LoginFailure('Timeout: Check the network')
   #finally:
     # print log
@@ -366,9 +366,9 @@ def verify_ssh_passwd(ui, host, username, password):
     s.logout()
     s.close(True)
     return True
-  except LoginFailure, e:
+  except LoginFailure as e:
     return False
-  except pexpect.TIMEOUT, e: raise
+  except pexpect.TIMEOUT as e: raise
 
 def change_ssh_passwd(ui, host, username, oldpass, newpass):
   # Login:
@@ -376,7 +376,7 @@ def change_ssh_passwd(ui, host, username, oldpass, newpass):
   try:
     s = ssh_open(ui, host, username, oldpass, filter=[(oldpass, ui._ctext('blue', '<OLD_PASS>')),(newpass, ui._ctext('blue', '<NEW_PASS>'))])
     ui._cprint('bright green', 'Ok')
-  except LoginFailure, e:
+  except LoginFailure as e:
     ui._cprint('bright red', 'failure: %s'%str(e))
     raise PasswordChangeFailure(str(e))
 
@@ -388,7 +388,7 @@ def change_ssh_passwd(ui, host, username, oldpass, newpass):
   except PasswordChangeFailure:
     # No need to verity, at this phase of the process it should not be possible to have inadvertently changed the password
     raise
-  except PasswordChangePossibleFailure, e:
+  except PasswordChangePossibleFailure as e:
     # If we got this far it is possible we may have changed the password, so we
     # need to verify. If verification fails we want to re-raise this exception,
     # not VerifyFailure:
@@ -486,7 +486,7 @@ def update_config(ui, filename, oldpass, newpass):
     fp = open(filename, 'rb')
     original = fp.readlines()
     fp.close()
-  except IOError, e:
+  except IOError as e:
     ui._cprint('bright red', 'IOError processing %s: %s'%(filename, str(e)))
     raise PasswordChangeFailure()
 
@@ -529,7 +529,7 @@ def update_config(ui, filename, oldpass, newpass):
         os.rename(fp.name, filename)
       finally:
         fp.close()
-    except IOError, e:
+    except IOError as e:
       raise PasswordChangeFailure(e)
 
 
@@ -565,13 +565,13 @@ def verify_ssh(ui, host, username, oldpass):
         ui._cprint('bright green', 'Ok')
       else:
         ui._cprint('bright red', 'Failed!')
-    except pexpect.TIMEOUT, e:
+    except pexpect.TIMEOUT as e:
       ui._cprint('bright red', 'timeout')
-  except pexpect.TIMEOUT, e:
+  except pexpect.TIMEOUT as e:
     ui._cprint('bright red', 'timeout')
-  except _PasswordChangeException, e:
+  except _PasswordChangeException as e:
     ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
-  except Exception, e:
+  except Exception as e:
     import traceback
     ui._cprint('red', traceback.format_exc())
     ui._cprint('bright red', 'Exception verifying password on %s: %s'%(host, e))
@@ -581,9 +581,9 @@ def change_ssh(ui, host, username, oldpass, newpass):
     ui._cprint('bright yellow', 'Changing password on %s for user %s...'%(host, username))
     if change_ssh_passwd(ui, host, username, oldpass, newpass):
       ui._cprint('bright green', 'Success')
-  except _PasswordChangeException, e:
+  except _PasswordChangeException as e:
     ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
-  except Exception, e:
+  except Exception as e:
     import traceback
     ui._cprint('red', traceback.format_exc())
     ui._cprint('bright red', 'Password change failed on %s: %s'%(host,e))
@@ -592,9 +592,9 @@ def change_local(ui, oldpass, newpass):
   try:
     if change_tty_passwd(ui, oldpass, newpass):
       ui._cprint('bright green', 'Success')
-  except _PasswordChangeException, e:
+  except _PasswordChangeException as e:
     ui._cprint('bright red', 'Local password change failed: %s'%e)
-  except Exception, e:
+  except Exception as e:
     import traceback
     ui._cprint('red', traceback.format_exc())
     ui._cprint('bright red', 'Local password change failed: %s'%e)
