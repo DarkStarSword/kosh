@@ -492,7 +492,10 @@ def update_config(ui, filename, oldpass, newpass):
 
   oldcompiled = re.compile(r'\b%s\b'%oldpass)
   newcompiled = re.compile(r'\b%s\b'%newpass)
-  modified = [ oldcompiled.sub(newpass, x) for x in original ]
+  # FIXME: Forcing utf-8 encoding here after python mysteriously wrote this out in utf-32!
+  # Really need to update to Python 3 and ensure that the encoding we use is
+  # consistent with the encoding that the regular expression matched on!
+  modified = [ oldcompiled.sub(newpass.encode('utf-8'), x) for x in original ]
 
   diff = list(difflib.unified_diff(original, modified, filename, filename))
 
