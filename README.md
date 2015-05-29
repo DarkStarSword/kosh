@@ -79,6 +79,8 @@ Keys
   for the highlighted entry, if used in the right pane it will reveal only the
   highlighted field.
 
+- Ctrl+R: Reveal the contents of a field currently being edited.
+
 - y: Copy entry to clipboard. If used in the left pane it will first copy the
   username field, then the password field. If used in the right pane it will
   copy the highlighted field.
