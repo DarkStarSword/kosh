@@ -69,6 +69,8 @@ Why you might want to use this password manager anyway
 
 Keys
 ----
+- /: Search for entry
+
 - n: New entry
 
 - e: Edit highlighted entry
