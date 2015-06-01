@@ -234,7 +234,11 @@ def replace_pxssh_login (self,server,username,password='',terminal_type='ansi',o
     Replaces the login method in pxssh to not abort on 'your password will
     expire...' messages
     """
-    from pxssh import spawn,TIMEOUT,ExceptionPxssh
+    try:
+      from pxssh import spawn,TIMEOUT,ExceptionPxssh
+    except:
+      from pexpect import spawn,TIMEOUT
+      from pxssh import ExceptionPxssh
 
     ssh_options = '-q'
     if self.force_password:
