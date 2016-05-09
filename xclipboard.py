@@ -98,8 +98,9 @@ def _ownSelections(display, win, selections):
     if type(selection) == type(''):
       selection = selections[i] = display.intern_atom(selection, False)
     win.set_selection_owner(selection, timestamp)
-    if display.get_selection_owner(selection) != win:
-      raise Exception('Failed to own selection %i' % selection)
+    owner = display.get_selection_owner(selection)
+    if owner.id != win.id:
+      raise Exception('Failed to make %s own selection %i, owned by %s' % (win, selection, owner))
   return timestamp
 
 def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_null()):
@@ -177,7 +178,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
     global _prev_requestor
     if ((e.time != X.CurrentTime and e.time < timestamp) or # Timestamp out of bounds
         (e.selection not in selections) or # Requesting a different selection
-        (e.owner != win)): # We aren't the owner
+        (e.owner.id != win.id)): # We aren't the owner
       return _refuseSelectionRequest(e)
     if (e.target in (Xatom.STRING, Xatom.TEXT)):
       (requestor, host) = findClientWindow(e.requestor, ui)
