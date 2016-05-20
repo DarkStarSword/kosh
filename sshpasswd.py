@@ -19,6 +19,10 @@
 # TODO: Investigate paramiko as possible alternate to pxssh
 
 import pexpect
+try:
+  import pxssh
+except ImportError:
+  import pexpect.pxssh as pxssh
 
 class _PasswordChangeException(Exception): pass                     # Base class for exceptions
 class PasswordChangeFailure(_PasswordChangeException): pass         # Password was NOT changed
@@ -236,9 +240,12 @@ def replace_pxssh_login (self,server,username,password='',terminal_type='ansi',o
     """
     try:
       from pxssh import spawn,TIMEOUT,ExceptionPxssh
-    except:
-      from pexpect import spawn,TIMEOUT
-      from pxssh import ExceptionPxssh
+    except ImportError:
+      try:
+        from pexpect.pxssh import spawn,TIMEOUT,ExceptionPxssh
+      except ImportError:
+        from pexpect import spawn,TIMEOUT
+        from pxssh import ExceptionPxssh
 
     ssh_options = '-q'
     if self.force_password:
@@ -347,7 +354,6 @@ class filteringIOProxy(object):
       return object.__getattribute__(self, 'fp').__getattribute__(name)
 
 def ssh_open(ui, host, username, password = '', force_password = True, filter=None):
-  import pxssh
   #import StringIO
   #log = StringIO.StringIO()
   import sys
