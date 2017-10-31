@@ -258,7 +258,9 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
             elif char == '\x1b':
               return
           elif fd in ui_fds:
-            ui.mainloop._update()
+            # This is a hack to redraw the screen - we really should
+            # restructure all this so as not to block instead:
+            ui.mainloop.event_loop._loop()
 
           if fd == display:
             while display.pending_events():
