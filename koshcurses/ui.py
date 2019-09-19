@@ -109,8 +109,13 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     t.start()
 
   def yank(self, size, key):
-    import xclipboard
-    xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+    import sys
+    if sys.platform in ('win32', 'cygwin'):
+      import winclipboard
+      winclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+    else:
+      import xclipboard
+      xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
 
   def edit(self, size, key):
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
