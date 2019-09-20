@@ -20,6 +20,7 @@ import urwid
 import weakref
 import widgets
 import time
+import sys
 
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -109,7 +110,6 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     t.start()
 
   def yank(self, size, key):
-    import sys
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
@@ -331,8 +331,12 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def yank(self, size, key):
     label = self._w.get_focus()[0].get_label()
-    import xclipboard
-    xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+    if sys.platform in ('win32', 'cygwin'):
+      import winclipboard
+      winclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+    else:
+      import xclipboard
+      xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
 
   def runscript(self, size, key):
     label = self._w.get_focus()[0].get_label()
