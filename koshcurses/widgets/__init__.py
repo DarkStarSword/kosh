@@ -68,16 +68,54 @@ class passwordEdit(keymapwid, koshEdit):
     self.reveal = not self.reveal
     self._invalidate()
 
+  def generate_password_builtin(self):
+    import Crypto.Random
+    def rand_u8():
+      import struct
+      return struct.unpack('B', Crypto.Random.get_random_bytes(1))[0]
+    lower = [chr(x) for x in range(ord('a'), ord('z')+1)]
+    upper = [chr(x) for x in range(ord('A'), ord('Z')+1)]
+    numeric = [chr(x) for x in range(ord('0'), ord('9')+1)]
+    symbols = list(r'''~`!@#$%^&*()_-+={]}]|\:;"'<,>.?/''')
+    allowed = lower + upper + numeric #+ symbols
+    length = 24 # FIXME: Customisable
+    passwd = Crypto.Random.get_random_bytes(length)
+    for i in range(len(passwd)):
+      if passwd[i] not in allowed:
+        c = None
+        while c not in allowed:
+          c = Crypto.Random.get_random_bytes(1)
+        passwd = passwd[:i] + c + passwd[i+1:]
+    # Ensure there is at least one character of each class to satisfy most
+    # password constraints:
+    def replace_one_character_with_set(chars):
+      i = rand_u8() % length
+      c = chars[rand_u8() % len(chars)]
+      return passwd[:i] + c + passwd[i+1:]
+    while True:
+      passwd = replace_one_character_with_set(lower)
+      passwd = replace_one_character_with_set(upper)
+      passwd = replace_one_character_with_set(numeric)
+      passwd = replace_one_character_with_set(symbols)
+      if length >= 4:
+        if set(passwd).intersection(lower) == set(): continue
+        if set(passwd).intersection(upper) == set(): continue
+        if set(passwd).intersection(numeric) == set(): continue
+        if set(passwd).intersection(symbols) == set(): continue
+      if rand_u8() % 2 == 0: continue
+      break
+    return passwd
+
   def generate_password(self, size, key):
     import subprocess
     # HACK: Multiple tools available, allow user to select, or fall back on
     # default built in
     try:
-      passwd = subprocess.check_output('pwgen -nc 12'.split()).strip()
-    except subprocess.CalledProcessError:
+      passwd = subprocess.check_output('pwgen -nc 24'.split()).strip()
+    except (subprocess.CalledProcessError, OSError):
       # FIXME: I don't have the ui here and can't notify, but this is the wrong
       # place to do this anyway, just a hack
-      return
+      passwd = self.generate_password_builtin()
     self.set_edit_text(passwd)
 
 class LineColumns(urwid.WidgetWrap):
