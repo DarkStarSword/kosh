@@ -23,7 +23,7 @@ class ui_null(object):
   interaction is to take place. Calls such as ui_null().mainloop.foo.bar.baz()
   will not raise any exceptions.
   """
-  def __call__(self, *args): pass
+  def __call__(self, *args, **kwargs): pass
   def __getattribute__(self,name):
     return self
 

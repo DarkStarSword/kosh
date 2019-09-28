@@ -17,7 +17,12 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 import ui_null
-import sys, tty
+import sys
+try:
+  import tty
+except ImportError:
+  # Windows
+  tty = None
 
 class ui_tty(object):
   # We don't implement a mainloop, but allow it to be queried, always returning

@@ -36,7 +36,7 @@ def checkUrwid(required):
       print 'ERROR: Python urwid library TOO OLD - Version %s or later is required' % required
       sys.exit(1)
   except ImportError:
-    print 'ERROR: Python urwid library not found - Please install urwid %s or later (apt-get install python-urwid)' % required
+    print 'ERROR: Python urwid library not found - Please install urwid %s or later (python -m ensurepip; python -m pip install urwid)' % required
     sys.exit(1)
   else:
     del urwid
