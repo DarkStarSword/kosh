@@ -103,7 +103,7 @@ def _ownSelections(display, win, selections):
       raise Exception('Failed to make %s own selection %i, owned by %s' % (win, selection, owner))
   return timestamp
 
-def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_null()):
+def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_null(), auto_advance=True):
   """
   Send a list of blobs via the clipboard (using X selections, cut buffers are
   not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
@@ -266,7 +266,7 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
             while display.pending_events():
               e = display.next_event()
               if e.type == X.SelectionRequest:
-                if handleSelectionRequest(e, field, record, ui):
+                if handleSelectionRequest(e, field, record, ui) and auto_advance:
                   # Don't break immediately, transfer will not have finished.
                   # Wait until the property has been deleted by the requestor
                   awaitingCompletion.append((e.requestor, e.property))

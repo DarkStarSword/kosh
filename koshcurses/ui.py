@@ -123,8 +123,8 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       import winclipboard
       winclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
     else:
-      # TODO
-      pass
+      import xclipboard
+      xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui, auto_advance=False)
 
   def edit(self, size, key):
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
@@ -354,8 +354,8 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       import winclipboard
       winclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
     else:
-      # TODO
-      pass
+      import xclipboard
+      xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui, auto_advance=False)
 
   def runscript(self, size, key):
     label = self._w.get_focus()[0].get_label()
