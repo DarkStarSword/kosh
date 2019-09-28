@@ -164,16 +164,16 @@ def copy_text_deferred(blob):
   user32.SetClipboardData(winmisc.CF_TEXT, handle)
   user32.CloseClipboard()
 
-#def copy_text_simple(blob, hWnd=None):
-#  '''
-#  Simple copy text implementation that does not require an owning window, but
-#  will not be notified when an application requests the clipboard contents.
-#  '''
-#  rc = user32.OpenClipboard(hWnd)
-#  if not rc:
-#    return False
-#  user32.EmptyClipboard()
-#  copy_text_deferred(blob)
+def copy_text_simple(blob, hWnd=None):
+  '''
+  Simple copy text implementation that does not require an owning window, but
+  will not be notified when an application requests the clipboard contents.
+  '''
+  rc = user32.OpenClipboard(hWnd)
+  if not rc:
+    return False
+  user32.EmptyClipboard()
+  copy_text_deferred(blob)
 
 def empty_clipboard(ui, hWnd=None):
   user32.OpenClipboard(hWnd)
@@ -236,7 +236,7 @@ class ClipboardWindow(object):
     self.hWnd = None
 
   def take_clipboard_ownership(self):
-    self.ui.status("Ready to send %s for '%s' via clipboard..." % # (enter skips, escape cancels)" %
+    self.ui.status("Ready to send %s for '%s' via clipboard... (enter skips, escape cancels)" %
         (self.blob[0].upper(), self.record), append=True)
     defer_clipboard_copy(self.hWnd)
     self.pump_tty_ui_main_loop()
@@ -264,6 +264,7 @@ class ClipboardWindow(object):
         if char == '\n':
           self.next()
         elif char == '\x1b':
+          empty_clipboard(self.ui, self.hWnd)
           user32.DestroyWindow(self.hWnd)
       elif fd in ui_fds:
         self.ui.mainloop.event_loop._loop()
@@ -321,50 +322,50 @@ class ClipboardWindow(object):
 
     self.close()
 
-#def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
-#  def tty_ui_loop(ui):
-#    # FIXME: This works in cygwin, but might be problematic under native
-#    # Windows Python where select() only works on sockets
-#    ui_fds = ui.mainloop.screen.get_input_descriptors()
-#    if ui_fds is None: ui_fds = []
-#    select_fds = set(ui_fds)
-#
-#    old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
-#    try:
-#      while 1:
-#        ui.mainloop.draw_screen()
-#        while True:
-#          try:
-#            timeout = None
-#            (readable, ign, ign) = select.select(select_fds, [], [], timeout)
-#          except select.error as e:
-#            if e.args[0] == 4: continue # Interrupted system call
-#            raise
-#          break
-#
-#        if not readable:
-#          break
-#
-#        for fd in readable:
-#          if fd == sys.stdin.fileno():
-#            char = sys.stdin.read(1)
-#            if char == '\n':
-#              return True
-#            elif char == '\x1b':
-#              return False
-#          elif fd in ui_fds:
-#            # This is a hack to redraw the screen - we really should
-#            # restructure all this so as not to block instead:
-#            ui.mainloop.event_loop._loop()
-#    finally:
-#      ui_tty.restore_cbreak(old)
-#  ui.status('')
-#  for (field, blob) in blobs:
-#    copy_text_simple(blob)
-#    ui.status("Copied %s for '%s' to clipboard, press enter to continue..."%(field.upper(),record), append=True)
-#    if not tty_ui_loop(ui):
-#      break
-#  empty_clipboard(ui)
+def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
+  def tty_ui_loop(ui):
+    # FIXME: This works in cygwin, but might be problematic under native
+    # Windows Python where select() only works on sockets
+    ui_fds = ui.mainloop.screen.get_input_descriptors()
+    if ui_fds is None: ui_fds = []
+    select_fds = set(ui_fds)
+
+    old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
+    try:
+      while 1:
+        ui.mainloop.draw_screen()
+        while True:
+          try:
+            timeout = None
+            (readable, ign, ign) = select.select(select_fds, [], [], timeout)
+          except select.error as e:
+            if e.args[0] == 4: continue # Interrupted system call
+            raise
+          break
+
+        if not readable:
+          break
+
+        for fd in readable:
+          if fd == sys.stdin.fileno():
+            char = sys.stdin.read(1)
+            if char == '\n':
+              return True
+            elif char == '\x1b':
+              return False
+          elif fd in ui_fds:
+            # This is a hack to redraw the screen - we really should
+            # restructure all this so as not to block instead:
+            ui.mainloop.event_loop._loop()
+    finally:
+      ui_tty.restore_cbreak(old)
+  ui.status('')
+  for (field, blob) in blobs:
+    copy_text_simple(blob)
+    ui.status("Copied %s for '%s' to clipboard, press enter to continue..."%(field.upper(),record), append=True)
+    if not tty_ui_loop(ui):
+      break
+  empty_clipboard(ui)
 
 def sendViaClipboard(blobs, record = None, ui=ui_null()):
   ui.status('')

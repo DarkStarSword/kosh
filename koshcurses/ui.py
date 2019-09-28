@@ -30,6 +30,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       'ctrl n': 'showNewer',
       'g': 'goto',
       'y': 'yank',
+      'Y': 'capital_yank',
       'e': 'edit',
       'D': 'delete',
       }
@@ -117,6 +118,14 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       import xclipboard
       xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
 
+  def capital_yank(self, size, key):
+    if sys.platform in ('win32', 'cygwin'):
+      import winclipboard
+      winclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
+    else:
+      # TODO
+      pass
+
   def edit(self, size, key):
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
 
@@ -146,6 +155,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
 class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
       'y': 'yank',
+      'Y': 'capital_yank',
       'S': 'runscript',
       }
 
@@ -337,6 +347,15 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     else:
       import xclipboard
       xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+
+  def capital_yank(self, size, key):
+    label = self._w.get_focus()[0].get_label()
+    if sys.platform in ('win32', 'cygwin'):
+      import winclipboard
+      winclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
+    else:
+      # TODO
+      pass
 
   def runscript(self, size, key):
     label = self._w.get_focus()[0].get_label()
