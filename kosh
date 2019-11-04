@@ -16,6 +16,31 @@
 # You should have received a copy of the GNU General Public License
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
+def disable_ptrace():
+  # This prevents the opportunistic attack whereby someone notices kosh left
+  # running on an unattended workstation and runs gcore to extract passwords
+  # from memory while the owner is distracted. Consider settings such as
+  # university computer labs where this sort of attack may take place.
+  #
+  # This will also boot out an already attached debugger, but this is *NOT*
+  # trying to mitigate any attacks involving that avenue, since an existing
+  # debugger could easily skip over the prctl call and there's nothing we can
+  # really do to stop it. However, such an attack requires advance preparation
+  # - it is not opportunistic, and if your threat model includes such an
+  # adversary than your only defence is to ensure that they never gain access
+  # your workstation to prepare this or any other attack in the first place.
+  #
+  # Likewise, this does not prevent the root user from reading passwords out of
+  # memory - if your adversary has root, you are already owned.
+  import ctypes, ctypes.util
+  libc = ctypes.CDLL(ctypes.util.find_library('c'))
+  PR_SET_DUMPABLE = 4
+  try:
+    libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
+  except AttributeError: # Not Linux
+    pass
+disable_ptrace()
+
 passdb_default = '~/.kosh/koshdb'
 
 urwid_req_version = '0.9.9.1' # Fixme: what version is actually required?
