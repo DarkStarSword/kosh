@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# vi:sw=2:ts=2:expandtab
+# vi:sw=2:ts=2:expandtab:sts=2
 
 # Copyright (C) 2009-2015 Ian Munsie
 #
@@ -74,7 +74,14 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     return ret
 
   def select(self, button):
-    self.pwForm.reveal(self.showing)
+    showing = self.db[button.get_label()]
+    if self.showing == showing:
+      # Either pressed enter, or clicked a second time on same entry
+      self.pwForm.reveal(self.showing)
+    else:
+      # May happen due to mouse click
+      self.showing = showing
+      self.pwForm.show(self.showing)
     # FIXME: focus
 
   def showOlder(self, size, key):
@@ -127,7 +134,11 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui, auto_advance=False)
 
   def edit(self, size, key):
+    self.ui.container.set_focus(self.pwForm)
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
+
+  def selectable(self):
+    return not self.pwForm.editing
 
   def delete(self, size, key):
     del self.db[self.showing]
@@ -163,8 +174,11 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     urwid.WidgetWrap.__init__(self, urwid.SolidFill())
     self.lb = None
     self.ui = ui
+    self.editing = False
 
   def showNone(self):
+    if self.editing:
+      return
     self.entry = None
     self._set_w(urwid.SolidFill())
     self.fields = None
@@ -172,6 +186,8 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.lb = None
 
   def show(self, entry):
+    if self.editing:
+      return
     if entry is None:
       return self.showNone()
     self.entry = entry
@@ -181,6 +197,8 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self._update()
 
   def reveal(self, entry):
+    if self.editing:
+      return
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
       [ urwid.Text(x+": " + entry[x]) for x in entry ] + \
@@ -188,6 +206,8 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self._update()
 
   def reveal_field(self, button):
+    if self.editing:
+      return
     label = button.get_label()
     index = self.content.index(button)
     self.content = self.content[:index] + \
@@ -196,6 +216,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self._update()
 
   def edit(self, entry, ok, cancel):
+    self.editing = True
     self.entry = entry
     self.cancel = cancel
     self.okCallback=ok
@@ -319,10 +340,12 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
         self.entry[name] = txt
       elif name in self.entry:
         del self.entry[name]
+    self.editing = False
     self.okCallback(self.entry)
 
   def discard(self, *args):
     self.showNone()
+    self.editing = False
     self.cancel()
 
   def keypress(self, size, key):
