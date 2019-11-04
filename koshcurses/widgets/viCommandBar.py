@@ -61,7 +61,9 @@ class viCommandBar(urwid.WidgetWrap):
 
     self.defaults()
     self._status = urwid.Text('')
-    self._container = urwid.Frame(body, footer = self._status)
+    self._status_r = urwid.Text('test')
+    self._cols = urwid.Columns((self._status, ('pack', self._status_r)))
+    self._container = urwid.Frame(body, footer = self._cols)
     self.normal_mode()
     urwid.WidgetWrap.__init__(self, self._container)
 
@@ -80,7 +82,13 @@ class viCommandBar(urwid.WidgetWrap):
         self._status = urwid.Text(status)
     else:
       self._status = status
-    self._container.footer = self._status
+    #self._container.footer = self._status
+    self._cols.contents[0] = (self._status, self._cols.contents[0][1])
+
+  def update_status_right(self, status):
+    #self._status_r.markup = status
+    self._status_r = urwid.Text(status)
+    self._cols.contents[1] = (self._status_r, self._cols.contents[1][1])
 
   def normal_mode(self):
     self._mode = 'NORMAL'

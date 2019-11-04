@@ -18,6 +18,7 @@
 
 import urwid
 import utf8
+import types
 
 from viCommandBar import viCommandBar
 
@@ -132,15 +133,20 @@ class LineColumns(urwid.WidgetWrap):
   divider = ('fixed', 1, urwid.Pile( [ tdivisor, vline, bdivisor ], 1))
 
   def __init__(self, widget_list, dividechars=0):
+    self.update(widget_list)
+    urwid.WidgetWrap.__init__(self, self.columns)
+
+  def update(self, widget_list=None):
+    if widget_list:
+      self.widget_list = widget_list
     def extractsize(widget):
-      if type(widget) == type(()):
+      if type(widget) == types.TupleType:
         return widget[:2] + tuple([urwid.Pile( [self.hline, widget[2], self.hline], 1)])
       return urwid.Pile( [self.hline, widget, self.hline], 1)
-    self.widget_list = widget_list
     self.columns = urwid.Columns( [self.left] +
-        reduce(lambda a,b: a+b, [[extractsize(col), self.divider] for col in widget_list])[:-1] +
+        reduce(lambda a,b: a+b, [[extractsize(col), self.divider] for col in self.widget_list])[:-1] +
         [self.right] )
-    urwid.WidgetWrap.__init__(self, self.columns)
+    self._w = self.columns
 
   def set_focus(self, item):
     if type(item) == type(0):
@@ -148,3 +154,7 @@ class LineColumns(urwid.WidgetWrap):
     else:
       position = self.widget_list.index(item)
     return self.columns.set_focus(position*2 + 1)
+
+  def set_widget(self, idx, widget):
+    self.widget_list[idx] = widget
+    self.update()

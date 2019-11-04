@@ -43,6 +43,12 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.refresh()
     urwid.WidgetWrap.__init__(self, self.lb)
 
+  def expire(self):
+    self.db = {}
+    self.showing = None
+    self.visibleEntries = []
+    self.refresh()
+
   def refresh(self):
     def cicmp(x, y):
       return cmp(x.lower(), y.lower())
@@ -58,6 +64,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       self.pwForm.show(self.showing)
 
   def keypress(self, size, key):
+    self.ui.touch()
     ret = super(passwordList, self).keypress(size, key)
     if ret is not None:
       # FIXME: generalise these, handle tab better:
@@ -74,6 +81,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     return ret
 
   def select(self, button):
+    self.ui.touch()
     showing = self.db[button.get_label()]
     if self.showing == showing:
       # Either pressed enter, or clicked a second time on same entry
@@ -206,6 +214,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self._update()
 
   def reveal_field(self, button):
+    self.ui.touch()
     if self.editing:
       return
     label = button.get_label()
@@ -349,6 +358,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.cancel()
 
   def keypress(self, size, key):
+    self.ui.touch()
     focus = self._w.get_focus()[0]
     ret = super(passwordForm, self).keypress(size, key)
     if ret is not None:
@@ -417,8 +427,43 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
       ] )
     self.vi = widgets.viCommandBar(self.container, search_function=self.pwList.search)
     urwid.WidgetWrap.__init__(self, self.vi)
-  
+    self.touch()
+
+  def touch(self):
+    if not hasattr(self, 'expire') or self.expire >= time.time():
+      self.expire = time.time() + 60
+    self.update_countdown_display()
+
+  def update_countdown_display(self):
+    import math
+    remaining = math.ceil(self.expire - time.time())
+    if remaining < 0:
+      if not self.pwEntry.editing:
+        raise urwid.ExitMainLoop()
+      # Currently editing an entry - defer closing until the user has saved or
+      # cancelled to avoid losing their entry, but prevent access to any other
+      # entry incase they left the program open by mistake
+      self.vi.update_status_right({
+        1: ' :  ',
+        0: '0:00',
+      }[remaining % 2])
+      if self.pwList:
+        self.pwList.expire()
+        self.pwList = None
+        self.container.set_widget(0, ('weight', 0.75, urwid.Filler(urwid.Text('Locked', 'center'))))
+    else:
+      self.vi.update_status_right('%d:%02d' % (remaining // 60, remaining % 60))
+    try:
+      self.mainloop.draw_screen()
+    except: pass
+
+  def tick(self, mainloop=None, user_data=None):
+    self.update_countdown_display()
+    self.alarm = self.mainloop.set_alarm_at(time.time() + 1, self.tick)
+
   def new(self, size, key):
+    if self.pwEntry.editing:
+      return
     import koshdb # FIXME: decouple this
     entry = koshdb.koshdb.passEntry(self.db._masterKeys[0])
     entry['Username'] = ''
@@ -431,15 +476,17 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   def commitNew(self, entry):
     self.db[entry.name] = entry
     self.db.write()
-    self.pwList.refresh()
+    if self.pwList:
+      self.pwList.refresh()
 
   def cancel(self):
     # Necessary to get focus back
     self.container.set_focus(0)
-    
+
   def status(self, status, append=False):
     return self.vi.update_status(status, append)
 
   def showModal(self, parent=None):
     self.mainloop = urwid.MainLoop(self)
+    self.tick()
     self.mainloop.run()

@@ -23,7 +23,6 @@ import Crypto.Hash.SHA256
 import Crypto.Cipher.AES
 import Crypto.Util.strxor
 import base64
-import threading
 import weakref
 import json
 
@@ -46,10 +45,8 @@ passDefaultFieldOrder = ['Username','login','Password','passwd']
 passDefaultCopyFieldOrder = ['Username','login','Password','passwd']
 
 class _masterKey(object):
-  # TODO: Add timeout
   # TODO: Protect self._key (mprotect, accessor methods)
   BLOB_PREFIX = 'k:'
-  TIMEOUT = 60
 
   def __init__(self, passphrase, blob=None):
     if blob is None:
@@ -63,22 +60,10 @@ class _masterKey(object):
   def unlock(self, passphrase):
     self._key = self._decMasterKey(self._blob, passphrase)
 
-  def touch(self):
-    self._timer = threading.Timer(self.TIMEOUT, self.expire)
-    # FIXME: This doesn't work properly anyway and until I fix it is is just too annoying:
-    #self._timer.start()
-
   def expire(self):
     """ MUST be called to clean up threads, otherwise the program will not terminate until timeout """
-    if hasattr(self, '_timer'):
-      self._timer.cancel()
-      del self._timer
     if hasattr(self, '_key'):
       del self._key
-
-  #def __del__(self):
-  #  # Cancel any running timers in other threads
-  #  self.expire()
 
   def __str__(self):
     return self.BLOB_PREFIX + self._blob
@@ -86,7 +71,6 @@ class _masterKey(object):
   def __setattr__(self, name, val):
     if name == '_key': self.expire()
     object.__setattr__(self, name, val)
-    if name == '_key': self.touch()
 
   def __getattr__(self, name):
     if name == '_key':
