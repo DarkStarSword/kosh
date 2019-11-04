@@ -16,8 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
-import os
-import fcntl
+import os, sys
+import fcntl, errno
 import Crypto.Hash.SHA
 import Crypto.Hash.SHA256
 import Crypto.Cipher.AES
@@ -37,6 +37,7 @@ class ChecksumFailure(Exception): pass
 class KeyExpired(Exception): pass
 class Bug(Exception): pass
 class ReadOnlyPassEntry(Exception): pass
+class FileLocked(Exception): pass
 
 # FIXME: HACK to work with pwsafe imported files for now:
 #passDefaultFieldOrder = ['Username','Password']
@@ -268,8 +269,9 @@ class KoshDB(dict):
       self._create(filename, prompt)
 
   def __del__(self):
-    for x in self._masterKeys:
-      x.expire()
+    if '_masterKeys' in self:
+      for x in self._masterKeys:
+        x.expire()
 
   def _create(self, filename, prompt):
     msg = 'New Password Database\nEnter passphrase:'
@@ -332,7 +334,14 @@ class KoshDB(dict):
         raise Bug("Refer to %s for details" % filename)
 
   def _open(self, filename, prompt):
-    self.fp = open(filename, 'rb')
+    self.fp = open(filename, 'rb+') # Must open for write access for lock to succeed
+    try:
+      fcntl.lockf(self.fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except IOError as e:
+      if e.errno not in (errno.EACCES, errno.EAGAIN):
+        raise
+      # TODO: Allow read only access
+      raise FileLocked()
     self._readExpect(KoshDB.FILE_HEADER)
     self._masterKeys = []
     self._lines = []
