@@ -373,6 +373,11 @@ def sendViaClipboard(blobs, record = None, ui=ui_null()):
   try:
     clip_win = ClipboardWindow(blobs, record=record, ui=ui)
     clip_win.main_loop()
+  except StopIteration:
+    ui.status('Nothing to copy')
+    # Ensure user won't paste previous clipboard contents into a login box if
+    # they don't notice the message:
+    empty_clipboard(ui)
   finally:
     ui_tty.restore_cbreak(old)
 
