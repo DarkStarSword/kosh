@@ -35,9 +35,7 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
         while True:
           try:
             timeout = None
-            print('select... ' + str(select_fds))
             (readable, ign, ign) = select.select(select_fds, [], [], timeout)
-            print('ret')
           except select.error as e:
             if e.args[0] == 4: continue # Interrupted system call
             raise
@@ -47,7 +45,6 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
           break
 
         for fd in readable:
-          print(fd)
           if fd == sys.stdin.fileno():
             char = sys.stdin.read(1)
             if char == '\n':
