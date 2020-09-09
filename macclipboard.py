@@ -9,7 +9,7 @@ import Foundation
 import AppKit
 
 def copy_text_simple(blob):
-  text = str(blob) + '\0' # blob may be utf8
+  text = str(blob) # blob may be utf8
   text = Foundation.NSString.stringWithString_(text).nsstring()
   data = text.dataUsingEncoding_(Foundation.NSUTF8StringEncoding)
   clipboard = AppKit.NSPasteboard.generalPasteboard()
