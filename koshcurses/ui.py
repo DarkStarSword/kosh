@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab:sts=2
 
-# Copyright (C) 2009-2015 Ian Munsie
+# Copyright (C) 2009-2020 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -430,12 +430,20 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     self.touch()
 
   def touch(self):
-    if not hasattr(self, 'expire') or self.expire >= time.time():
+    if not hasattr(self, 'expire') or self.expire >= time.time() or self.vi.variables['pause']:
       self.expire = time.time() + 60
     self.update_countdown_display()
 
   def update_countdown_display(self):
     import math
+
+    if self.vi.variables['pause']:
+      if self.vi.get_status_right() == 'PAUSE':
+        self.vi.update_status_right('!*!*!')
+      else:
+        self.vi.update_status_right('PAUSE')
+      return
+
     remaining = math.ceil(self.expire - time.time())
     if remaining < 0:
       if not self.pwEntry.editing:

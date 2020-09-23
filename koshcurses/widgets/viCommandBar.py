@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
-# Copyright (C) 2009-2015 Ian Munsie
+# Copyright (C) 2009-2020 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -72,6 +72,7 @@ class viCommandBar(urwid.WidgetWrap):
       self.variables = {}
     self.variables.update({
       'incsearch': True,
+      'pause': False,
     })
 
   def update_status(self, status, append=False):
@@ -89,6 +90,9 @@ class viCommandBar(urwid.WidgetWrap):
     #self._status_r.markup = status
     self._status_r = urwid.Text(status)
     self._cols.contents[1] = (self._status_r, self._cols.contents[1][1])
+
+  def get_status_right(self):
+    return self._status_r.get_text()[0]
 
   def normal_mode(self):
     self._mode = 'NORMAL'
@@ -222,7 +226,7 @@ class viCommandBar(urwid.WidgetWrap):
         args = []
       else:
         if var.startswith('no'):
-          (v,s) = (var.lstrip('no'), False)
+          (v,s) = (var[2:], False)
         else:
           (v,s) = (var, True)
       if v not in self.variables:
