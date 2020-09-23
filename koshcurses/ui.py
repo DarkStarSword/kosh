@@ -129,6 +129,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+    elif sys.platform == 'darwin':
+      import macclipboard
+      macclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
     else:
       import xclipboard
       xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
@@ -137,6 +140,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
+    elif sys.platform == 'darwin':
+      import macclipboard
+      macclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
     else:
       import xclipboard
       xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui, auto_advance=False)
@@ -377,6 +383,9 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+    elif sys.platform == 'darwin':
+      import macclipboard
+      macclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
     else:
       import xclipboard
       xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
@@ -386,6 +395,9 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
+    elif sys.platform == 'darwin':
+      import macclipboard
+      macclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
     else:
       import xclipboard
       xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui, auto_advance=False)
