@@ -5,6 +5,7 @@ from __future__ import print_function
 from ui import ui_tty, ui_null
 import sys
 import select
+import time
 
 # How many miliseconds to wait for the receiving application to retrieve the
 # clipboard contents before taking ownership again for the next value. This is
@@ -17,6 +18,16 @@ clipboard_hold_ms = 20
 # clipboard window's message queue. This controls how responsive the console
 # will be, at the cost of wasting CPU time:
 console_poll_ms = 20
+
+# How many seconds to ignore clipboard requests after taking ownership of
+# the clipboard. Intended to filter out things like clipboard managers and
+# remote desktop applications that always want to know what's in the clipboard
+# messing up our auto clipboard progression and that we likely don't want to
+# give any credentials to anyway. Since Windows doesn't give us a way to know
+# who's asking for the clipboard we can't explicitly blacklist these apps, but
+# this seems to be the behaviour they all have in common. If it is actually
+# intended to hand the credentials over to these use a capital yank instead.
+ignore_clipboard_requests_within = 0.01
 
 # Example of creating a window via ctypes (only necessary to take ownership of
 # the clipboard to know when an application requests the contents. If we just
@@ -188,6 +199,7 @@ class ClipboardWindow(object):
     self.blob = next(self.blobs)
     self.record = record
     self.ui = ui
+    self.clipboard_open_time = 0
 
     self.WndProc = winmisc.WNDCLASSEX.WNDPROCTYPE(self.PyWndProcedure)
 
@@ -239,6 +251,7 @@ class ClipboardWindow(object):
     self.ui.status("Ready to send %s for '%s' via clipboard... (enter skips, escape cancels)" %
         (self.blob[0].upper(), self.record), append=True)
     defer_clipboard_copy(self.hWnd)
+    self.clipboard_open_time = time.time()
     self.pump_tty_ui_main_loop()
 
   def pump_tty_ui_main_loop(self):
@@ -283,8 +296,12 @@ class ClipboardWindow(object):
     if Msg == winmisc.WM_DESTROY:
       user32.PostQuitMessage(0)
     elif Msg in (winmisc.WM_RENDERFORMAT, winmisc.WM_RENDERALLFORMATS):
-      copy_text_deferred(self.blob[1])
-      user32.SetTimer(hWnd, 0, clipboard_hold_ms, None)
+      delta = time.time() - self.clipboard_open_time
+      if delta < ignore_clipboard_requests_within:
+        self.ui.status('Ignoring clipboard request within %.1fms of taking clipboard' % (delta*1000.0), append=True)
+      else:
+        copy_text_deferred(self.blob[1])
+        user32.SetTimer(hWnd, 0, clipboard_hold_ms, None)
     elif Msg == winmisc.WM_TIMER:
       if wParam == 0:
         user32.KillTimer(hWnd, 0)
