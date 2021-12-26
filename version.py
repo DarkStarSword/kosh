@@ -48,3 +48,6 @@ def checkUrwid(required):
   if required.split('.') > urwid.__version__.split('.'):
     print('ERROR: Python urwid library TOO OLD - Version %s or later is required' % required)
     sys.exit(1)
+
+def checkXClipboard():
+  import_ask_install('Xlib', 'xlib', 'WARNING: Python-Xlib not installed, clipboard integration will be unavailable')

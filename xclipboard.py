@@ -42,7 +42,7 @@ def newTimestamp(display, window):
   oldmask = window.get_attributes().your_event_mask
   window.change_attributes(event_mask = X.PropertyChangeMask)
   atom = Xatom.FULL_NAME # Arbitrary. Bad example? Blatantly incorrect? Probably - I'm an X n00b
-  window.change_property(atom, Xatom.STRING, 8, '', X.PropModeAppend)
+  window.change_property(atom, Xatom.STRING, 8, b'', X.PropModeAppend)
   while 1:
     e = display.next_event()
     if e.type == X.PropertyNotify and e.window == window and e.atom == Xatom.FULL_NAME:
@@ -63,7 +63,7 @@ def _refuseSelectionRequest(event):
   event.requestor.send_event(resp, 0, 0)
   return False
 
-def _sendSelection(blob, type, size, event, ui):
+def _sendSelection(blob, atom_type, size, event, ui):
   """
   Positively respond to a selection request (event) by passing the blob of type
   type (with appropriate format size for the type - refer to the ICCCM) to the
@@ -71,9 +71,10 @@ def _sendSelection(blob, type, size, event, ui):
   """
   err = Xerror.CatchError()
   prop = event.property if event.property else event.target
-  if type in (Xatom.STRING, Xatom.TEXT):
-    blob = str(blob) # blob may be utf8
-  event.requestor.change_property(prop, type, size, blob, onerror=err)
+  if atom_type in (Xatom.STRING, Xatom.TEXT):
+    if type(blob) == str:
+      blob = blob.encode('utf8')
+  event.requestor.change_property(prop, atom_type, size, blob, onerror=err)
   if err.get_error():
     _refuseSelectionRequest(event)
     raise Exception(str(err.get_error()))
