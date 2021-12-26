@@ -129,7 +129,7 @@ class _masterKey(object):
     a = Crypto.Cipher.AES.new(k)
     checksum = Crypto.Hash.SHA256.new(key).digest()
     e = a.encrypt(key + checksum)
-    return base64.encodebytes(e+s).replace('\n','')
+    return base64.encodebytes(e+s).replace(b'\n',b'')
 
   @staticmethod
   def _decMasterKey(blob, passphrase):
