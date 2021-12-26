@@ -28,8 +28,6 @@ blacklist_re = map(re.compile, [
 ])
 # TODO: Option to re-grab if PRIMARY selection is stolen. Maybe blacklist certain apps like TightVNC?
 
-class XFailConnection(Exception): pass
-
 _prev_requestor = None
 
 def newTimestamp(display, window):
@@ -109,8 +107,6 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
   not yet supported) in sequence. Typically the PRIMARY and/or SECONDARY
   selections are used for middle click and shift+insert pasting, while the
   CLIPBOARD selection is often used by Ctrl+V pasting.
-
-  Raises an XFailConnection exception if connecting to the X DISPLAY failed.
   """
   global Xlib, X, Xatom, Xerror
   if Xlib is None:
@@ -210,7 +206,8 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
   try:
     display = Xlib.display.Display()
   except Xerror.DisplayError:
-    raise XFailConnection()
+    ui.status('Error connecting to X display, clipboard integration unavailable')
+    return
   finally:
     sys.stdout = saved_stdout
   screen = display.screen()
