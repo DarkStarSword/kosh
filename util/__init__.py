@@ -1,4 +1,4 @@
-# Copyright (C) 2009-2015 Ian Munsie
+# Copyright (C) 2009-2021 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
