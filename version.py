@@ -17,26 +17,34 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys
+import subprocess
+import importlib
+import site
 
 __version__ = 'v0.1 development' #FIXME: use git describe if from git repository
 
-def checkCrypto():
+def import_ask_install(module, package, msg):
   try:
-    import Crypto
+      return __import__(module)
   except ImportError:
-    print('ERROR: Python crypto library not found - Please install pycrypto (apt-get install python-crypto)')
+      print(msg)
+      answer = None
+      while answer not in ('y', 'n'):
+        answer = input('Install %s with pip? (y/n) ' % package).lower()
+      if answer == 'y':
+        subprocess.call([sys.executable] + "-m ensurepip --user".split())
+        subprocess.call([sys.executable, "-m", "pip", "install", package, "--user"])
+        importlib.reload(site) # Ensure site-packages paths are up to date if pip just created it
+        return __import__(module)
+
+def checkCrypto():
+  if not import_ask_install('Crypto', 'pycrypto', 'ERROR: Python crypto library not found'):
     sys.exit(1)
-  else:
-    del Crypto
 
 def checkUrwid(required):
-  try:
-    import urwid
-    if required.split('.') > urwid.__version__.split('.'):
-      print('ERROR: Python urwid library TOO OLD - Version %s or later is required' % required)
-      sys.exit(1)
-  except ImportError:
-    print('ERROR: Python urwid library not found - Please install urwid %s or later (python -m ensurepip; python -m pip install urwid)' % required)
+  if not import_ask_install('urwid', 'urwid', 'ERROR: Python urwid library not found'):
     sys.exit(1)
-  else:
-    del urwid
+  import urwid
+  if required.split('.') > urwid.__version__.split('.'):
+    print('ERROR: Python urwid library TOO OLD - Version %s or later is required' % required)
+    sys.exit(1)
