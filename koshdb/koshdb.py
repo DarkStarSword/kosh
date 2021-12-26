@@ -27,8 +27,7 @@ import weakref
 import json
 
 def randBits(size):
-  import Crypto.Random
-  return Crypto.Random.get_random_bytes(size//8)
+  return os.urandom(size//8)
 
 def extendstr(data, length):
   return (data*(length//len(data)+1))[:length]
@@ -69,6 +68,8 @@ class _masterKey(object):
       pass
 
   def __str__(self):
+    raise NotImplemented('python3')
+  def __bytes__(self):
     return self.BLOB_PREFIX + self._blob
 
   def __setattr__(self, name, val):
@@ -90,13 +91,14 @@ class _masterKey(object):
     def pad(data, multiple):
       assert(multiple < 256)
       padding = multiple - ((len(data) + 1) % multiple)
-      return data + '\0'*padding + chr(padding+1)
+      return data + b'\0'*padding + bytes([padding+1])
+    data = data.encode('utf8')
     checksum = Crypto.Hash.SHA.new(data).digest()
     a = Crypto.Cipher.AES.new(self._key)
     s = randBits(256)
     data = Crypto.Util.strxor.strxor(data,extendstr(s, len(data)))
     e = a.encrypt(pad(data + s + checksum, Crypto.Cipher.AES.block_size))
-    return base64.encodebytes(e).replace('\n','')
+    return base64.encodebytes(e).replace(b'\n',b'')
 
 
   def decrypt(self, blob):
@@ -180,6 +182,8 @@ class passEntry(dict):
     return newest
 
   def __str__(self):
+    raise NotImplemented('python3')
+  def __bytes__(self):
     return self.BLOB_PREFIX + self._blob
 
   def __setitem__(self, name, val):
@@ -313,22 +317,22 @@ class KoshDB(dict):
       fp.write(KoshDB.FILE_HEADER)
 
       for line in self._lines:
-        if type(line) == type(''):
+        if type(line) == type(b''):
           fp.write(line)
         else:
-          fp.write(str(line).strip() + '\n')
+          fp.write(bytes(line).strip() + b'\n')
           try:
             entries.remove(line)
           except:
             bug = True
-            fp.write("# WARNING: Above entry not found in masterkeys or password entries\n")
+            fp.write(b"# WARNING: Above entry not found in masterkeys or password entries\n")
 
       if entries != []:
         bug = True
-        fp.write("# WARNING: Below entries not tracked\n")
+        fp.write(b"# WARNING: Below entries not tracked\n")
         for entry in entries:
-          fp.write(str(entry).strip() + '\n')
-        fp.write("# WARNING: Above entries not tracked\n")
+          fp.write(str(entry).strip() + b'\n')
+        fp.write(b"# WARNING: Above entries not tracked\n")
 
       fp.flush()
       if os.path.exists(filename):
