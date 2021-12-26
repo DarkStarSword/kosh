@@ -16,11 +16,11 @@
 # You should have received a copy of the GNU General Public License
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
-def async(func):
-  def wrap(*args, **kwargs):
-    import threading
-    return threading.Thread(target=func, args=args, kwargs=kwargs).start()
-  return wrap
+#def async(func):
+#  def wrap(*args, **kwargs):
+#    import threading
+#    return threading.Thread(target=func, args=args, kwargs=kwargs).start()
+#  return wrap
 
 # http://www.python.org/dev/peps/pep-0318/
 # From Shane Hathaway on python-dev

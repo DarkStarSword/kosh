@@ -51,9 +51,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.refresh()
 
   def refresh(self):
-    def cicmp(x, y):
-      return cmp(x.lower(), y.lower())
-    self.content = [ urwid.Button(x, self.select) for x in sorted(self.visibleEntries, cicmp) ]
+    self.content = [ urwid.Button(x, self.select) for x in sorted(self.visibleEntries, key=lambda x:x.lower()) ]
     self.lb = urwid.ListBox(self.content)
     self.selection = 0
     self._set_w(self.lb)
@@ -275,7 +273,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       newpass = self.entry['passwd']
     # FIXME: Should walk list to find this
     oldpass = self.entry['OldPassword']
-    from . import other_ui.ui_tty as ui
+    import other_ui.ui_tty as ui
     old = ui.reset()
     try:
       script = httppasswd.main(ui(), None, username, oldpass, newpass)
@@ -293,7 +291,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def save_ui(fn):
     def _save_ui(*args, **kwargs):
-      from . import other_ui.ui_tty as ui
+      import other_ui.ui_tty as ui
       import time
       old = ui.reset()
       try:

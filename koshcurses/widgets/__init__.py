@@ -19,6 +19,7 @@
 import urwid
 from . import utf8
 import types
+from functools import reduce
 
 from .viCommandBar import viCommandBar
 

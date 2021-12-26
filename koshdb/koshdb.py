@@ -28,10 +28,10 @@ import json
 
 def randBits(size):
   import Crypto.Random
-  return Crypto.Random.get_random_bytes(size/8)
+  return Crypto.Random.get_random_bytes(size//8)
 
 def extendstr(data, length):
-  return (data*(length/len(data)+1))[:length]
+  return (data*(length//len(data)+1))[:length]
 
 class ChecksumFailure(Exception): pass
 class KeyExpired(Exception): pass
@@ -47,7 +47,7 @@ passDefaultCopyFieldOrder = ['Username','login','Password','passwd']
 
 class _masterKey(object):
   # TODO: Protect self._key (mprotect, accessor methods)
-  BLOB_PREFIX = 'k:'
+  BLOB_PREFIX = b'k:'
 
   def __init__(self, passphrase, blob=None):
     if blob is None:
@@ -63,8 +63,10 @@ class _masterKey(object):
 
   def expire(self):
     """ MUST be called to clean up threads, otherwise the program will not terminate until timeout """
-    if hasattr(self, '_key'):
+    try:
       del self._key
+    except AttributeError:
+      pass
 
   def __str__(self):
     return self.BLOB_PREFIX + self._blob
@@ -94,7 +96,7 @@ class _masterKey(object):
     s = randBits(256)
     data = Crypto.Util.strxor.strxor(data,extendstr(s, len(data)))
     e = a.encrypt(pad(data + s + checksum, Crypto.Cipher.AES.block_size))
-    return base64.encodestring(e).replace('\n','')
+    return base64.encodebytes(e).replace('\n','')
 
 
   def decrypt(self, blob):
@@ -106,7 +108,7 @@ class _masterKey(object):
     def unpad(data):
       padding = ord(data[-1:])
       return data[:-padding]
-    d = base64.decodestring(blob)
+    d = base64.decodebytes(blob)
     a = Crypto.Cipher.AES.new(self._key)
     deciphered = unpad(a.decrypt(d))
     decrypted = deciphered[:-Crypto.Hash.SHA.digest_size-32]
@@ -119,20 +121,20 @@ class _masterKey(object):
 
   @staticmethod
   def _encMasterKey(key, passphrase):
-    h = Crypto.Hash.SHA256.new(passphrase).digest()
+    h = Crypto.Hash.SHA256.new(passphrase.encode('utf8')).digest()
     s = randBits(256)
     k = Crypto.Util.strxor.strxor(h,s)
     a = Crypto.Cipher.AES.new(k)
     checksum = Crypto.Hash.SHA256.new(key).digest()
     e = a.encrypt(key + checksum)
-    return base64.encodestring(e+s).replace('\n','')
+    return base64.encodebytes(e+s).replace('\n','')
 
   @staticmethod
   def _decMasterKey(blob, passphrase):
-    d = base64.decodestring(blob)
-    h = Crypto.Hash.SHA256.new(passphrase).digest()
-    e = d[:-256/8]
-    s = d[-256/8:]
+    d = base64.decodebytes(blob)
+    h = Crypto.Hash.SHA256.new(passphrase.encode('utf8')).digest()
+    e = d[:-256//8]
+    s = d[-256//8:]
     k = Crypto.Util.strxor.strxor(h,s)
     a = Crypto.Cipher.AES.new(k)
     deciphered = a.decrypt(e)
@@ -143,7 +145,7 @@ class _masterKey(object):
     return key
 
 class passEntry(dict):
-  BLOB_PREFIX = 'p:'
+  BLOB_PREFIX = b'p:'
 
   def __init__(self, masterKey, blob=None, name=None):
     if type(masterKey) == weakref.ProxyType:
@@ -209,6 +211,9 @@ class passEntry(dict):
   def __cmp__(self, other):
     return cmp(self._timestamp, other._timestamp)
 
+  def __ge__(self, other):
+    return self._timestamp >= other._timestamp
+
   def __eq__(self, other):
     # Do not consider timestamp when checking for equality
     return self.name == other.name and dict.__eq__(self, other) and self.meta == other.meta
@@ -258,7 +263,7 @@ class passEntry(dict):
     return sortedGen(self, order)
 
 class KoshDB(dict):
-  FILE_HEADER = 'K05Hv0 UNSTABLE\n'
+  FILE_HEADER = b'K05Hv0 UNSTABLE\n'
 
   def __init__(self, filename, prompt):
     self.filename = filename
