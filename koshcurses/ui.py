@@ -160,7 +160,6 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.db.write()
 
   def search(self, search):
-    import string
     if not search:
       self.visibleEntries = list(self.db.keys())
       ret = None
@@ -168,7 +167,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       self.visibleEntries = []
       for entry in self.db:
         # FIXME: Don't (optionally?) search on other protected fields
-        if reduce(lambda x,y: x or search.lower() in y, list(map(string.lower,
+        if reduce(lambda x,y: x or search.lower() in y, list(map(str.lower,
           [entry]+[v for (k,v) in list(self.db[entry].items())
             if k.lower() not in ['password']])), False):
             self.visibleEntries.append(entry)
