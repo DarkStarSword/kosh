@@ -76,7 +76,7 @@ class viCommandBar(urwid.WidgetWrap):
     })
 
   def update_status(self, status, append=False):
-    if type(status) in (str, unicode):
+    if type(status) in (str, str):
       if append and self._status.text:
         self._status = urwid.Text(self._status.text + '\n' + status)
       else:
@@ -197,7 +197,7 @@ class viCommandBar(urwid.WidgetWrap):
         raise urwid.ExitMainLoop()
 
     if vars is None:
-      vars = self.variables.keys()
+      vars = list(self.variables.keys())
     contents = []
     for v in vars:
       if v not in self.variables:
@@ -209,7 +209,7 @@ class viCommandBar(urwid.WidgetWrap):
           contents += ['no%s'%v]
       else:
         contents += ['%s=%s'%(v,self.variables[v] if v in self.variables else '')]
-    container = urwid.ListBox(map(urwid.Text,contents))
+    container = urwid.ListBox(list(map(urwid.Text,contents)))
     urwid.MainLoop(container, unhandled_input = exit_on_input).run()
 
   def set_variable(self, args):

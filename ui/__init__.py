@@ -16,5 +16,5 @@
 # You should have received a copy of the GNU General Public License
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
-from ui_tty import ui_tty
-from ui_null import ui_null
+from .ui_tty import ui_tty
+from .ui_null import ui_null

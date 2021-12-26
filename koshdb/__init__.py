@@ -17,4 +17,4 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 __all__ = ['KoshDB']
-from koshdb import KoshDB
+from .koshdb import KoshDB

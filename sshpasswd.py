@@ -19,6 +19,7 @@
 # TODO: Investigate paramiko as possible alternate to pxssh
 
 import pexpect
+from functools import reduce
 try:
   import pxssh
 except ImportError:
@@ -94,7 +95,7 @@ def expect_groups_exception(ui, self, groups, exceptiongroups):
   raise the corresponding exception instead.
   exceptiongroups is a dict mapping expressions to exceptions
   """
-  ret = expect_groups(ui, self, groups + exceptiongroups.keys())
+  ret = expect_groups(ui, self, groups + list(exceptiongroups.keys()))
   if ret in groups:
     return ret
   raise exceptiongroups[ret]

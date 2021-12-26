@@ -42,7 +42,7 @@ def handleErr(callback, ignoreKeyboardInterrupt = True):
       try: f(*args)
       except:
         import traceback, sys
-        if ignoreKeyboardInterrupt and sys.exc_type == KeyboardInterrupt:
+        if ignoreKeyboardInterrupt and sys.exc_info()[0] == KeyboardInterrupt:
           return
         callback(traceback.format_exc())
     return wrap2

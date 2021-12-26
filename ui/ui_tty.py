@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
-import ui_null
+from . import ui_null
 import sys
 try:
   import tty
@@ -150,9 +150,9 @@ class ui_tty(object):
     # python 2.5 doesn't have __furure__.print_function
     # FIXME: file, sep
     if end != '\n':
-      print msg+end,
+      print(msg+end, end=' ')
     else:
-      print msg
+      print(msg)
 
   @staticmethod
   def _sgr(colour):

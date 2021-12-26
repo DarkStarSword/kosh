@@ -39,10 +39,10 @@
 #  Fill in form
 #  Submit form
 
-import urllib2
-import urlparse
-import cookielib
-import HTMLParser
+import urllib.request, urllib.error, urllib.parse
+import urllib.parse
+import http.cookiejar
+import html.parser
 
 import socket
 import ssl
@@ -91,7 +91,7 @@ class action_goto(urlvcr_action):
     return "Goto URL"
   def ask_params(self, ui, state):
     while True:
-      url = raw_input('Enter URL: ')
+      url = input('Enter URL: ')
       if url == '':
         raise _CancelAction()
       if url.find('://') != -1:
@@ -155,7 +155,7 @@ def select_element(ui, prompt, original_elements):
       return elements[0]
     ui._print('\n'.join(map(str,elements)))
     #ui._print('\n'.join([ '%3i: %s'%(i,str(x)) for (i,x) in enumerate(elements) ]))
-    filter = raw_input(prompt)
+    filter = input(prompt)
     if not filter:
       raise _CancelAction('User aborted')
     #if filter.isdigit():
@@ -187,7 +187,7 @@ def find_element(original_elements, filters):
     raise ReplayFailure('Multiple elements were matched by filters')
   return elements[0]
 
-class action_link(urlvcr_action, HTMLParser.HTMLParser):
+class action_link(urlvcr_action, html.parser.HTMLParser):
   def valid(self, state):
     return state.state is not None and state.body is not None
   def help(self, state):
@@ -197,14 +197,14 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
     while True:
       link = select_element(ui, "Enter part of the link to follow: ", self.links)
       url = link['href']
-      url = urlparse.urljoin(state.url, url)
+      url = urllib.parse.urljoin(state.url, url)
       if ui.confirm('Follow link "%s" to %s'%(ui._ctext('bright yellow', link.data), ui._ctext('bright blue', url)), True):
         return link.data
       raise _CancelAction('User aborted')
   def apply(self, ui, state, link):
     self.update(ui, state)
     link = find_element(self.links, [link])
-    url = urlparse.urljoin(state.url, link['href'])
+    url = urllib.parse.urljoin(state.url, link['href'])
     state.request(ui, url)
 
   class Link(dict):
@@ -236,18 +236,18 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError as e:
+      except html.parser.HTMLParseError as e:
         self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
         food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
-        HTMLParser.HTMLParser.reset(self) # Reset count
+        html.parser.HTMLParser.reset(self) # Reset count
         continue
       break
   def reset(self):
     self.links = []
     self.dom = []
-    HTMLParser.HTMLParser.reset(self)
+    html.parser.HTMLParser.reset(self)
   def handle_starttag(self, tag, attrs):
     if tag == 'a':
       self.dom.append(self.Link(attrs, self._ui))
@@ -267,7 +267,7 @@ class action_link(urlvcr_action, HTMLParser.HTMLParser):
       #self._ui._cprint('blue', data)
       self.dom[-1].data += data
 
-class action_form(urlvcr_action, HTMLParser.HTMLParser):
+class action_form(urlvcr_action, html.parser.HTMLParser):
   field_actions = { # Fixme: Make these their own context aware functions in the same style the urlvcr actions are:
       'x': 'Leave unchanged',
       's': 'Set a specific value', # ... then add a separate 'checked' action for checkboxes
@@ -286,7 +286,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
     form.override_action = None
     while True:
       ui._print(str(form))
-      idx = raw_input("Enter %s index to edit, 's' to submit, 'a' to add an additional value, 'o' to override form action: "%ui._ctext('green', 'field'))
+      idx = input("Enter %s index to edit, 's' to submit, 'a' to add an additional value, 'o' to override form action: "%ui._ctext('green', 'field'))
       if not idx:
         if ui.confirm('Really discard form?', False):
           raise _CancelAction('User aborted')
@@ -296,7 +296,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
           ui._ctext('bright blue', form.getaction() if form.getaction() else state.url)), False):
           return form.submit(None)
       if idx.lower() == 'a':
-        name = raw_input('New field name: ')
+        name = input('New field name: ')
         if not name: continue
         # FIXME: Verify field not already in form
         field = action_form.Form.Field({'name': name, 'value': ''}, ui)
@@ -304,7 +304,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         form.fields.append(field)
         idx = str(len(form.fields) - 1)
       if idx.lower() == 'o':
-        a = raw_input('Override form action (blank to restore default): ')
+        a = input('Override form action (blank to restore default): ')
         if a:
           form.override_action = a
         else:
@@ -328,7 +328,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
 
       # FIXME: Most of this stuff should be moved into appropriate classes:
       action = ui.read_nonbuffered('Enter action for this field:\n'+
-          '\n'.join(['  %s: %s'%(k,v) for (k,v) in action_form.field_actions.items()])+
+          '\n'.join(['  %s: %s'%(k,v) for (k,v) in list(action_form.field_actions.items())])+
           '\n> ')
       if action not in action_form.field_actions:
         continue
@@ -343,11 +343,11 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       else:
         field.action = action
         if action == 's':
-          val = raw_input('Enter new value: ')
+          val = input('Enter new value: ')
           field.value = val
         elif action == 'u':
           if state.username is None or ui.confirm('Set new username?', False):
-            state.username = raw_input('Enter Username: ')
+            state.username = input('Enter Username: ')
           field.value = state.username
         elif action in ['o','n']:
           field.value = '********'
@@ -359,7 +359,8 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         elif action == 'x' and field.additional:
           del form.fields[idx]
 
-  def apply(self, ui, state, (form_name, form_action, form_method, form_script)):
+  def apply(self, ui, state, xxx_todo_changeme):
+    (form_name, form_action, form_method, form_script) = xxx_todo_changeme
     self.update(ui, state)
     # form_action may not match if the submission URL changes, for now just match on name:
     form = find_element(self.forms, [form_name] if form_name is not None else [])
@@ -392,7 +393,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         data[f] = params
       elif action == 'u':
         if state.username is None:
-          state.username = raw_input('Enter Username: ')
+          state.username = input('Enter Username: ')
         data[f] = state.username
       elif action == 'o':
         if state.oldpass is None:
@@ -406,7 +407,7 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
         data[f] = state.newpass
       else:
         raise ReplayFailure('Invalid action while filling in form: %s'%action)
-    url = urlparse.urljoin(state.url, form_action)
+    url = urllib.parse.urljoin(state.url, form_action)
     if form_method.upper() == 'POST':
       state.request(ui, url, post=data)
     else:
@@ -522,18 +523,18 @@ class action_form(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError as e:
+      except html.parser.HTMLParseError as e:
         self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
         food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
-        HTMLParser.HTMLParser.reset(self) # Reset count
+        html.parser.HTMLParser.reset(self) # Reset count
         continue
       break
   def reset(self):
     self.forms = []
     self.dom = []
-    HTMLParser.HTMLParser.reset(self)
+    html.parser.HTMLParser.reset(self)
   def handle_starttag(self, tag, attrs):
     colour = 'yellow'
     if tag == 'form':
@@ -578,7 +579,7 @@ class action_agent(urlvcr_action):
   def help(self, state):
     return "Override User Agent string"
   def ask_params(self, ui, state):
-    agent = raw_input("New User Agent: ")
+    agent = input("New User Agent: ")
     if not agent:
       raise _CancelAction('User aborted')
     return agent
@@ -591,7 +592,7 @@ class action_referer(urlvcr_action):
   def help(self, state):
     return "Override Referer URL"
   def ask_params(self, ui, state):
-    referer = raw_input("New Referer URL: ")
+    referer = input("New Referer URL: ")
     return referer if referer else None
   def apply(self, ui, state, referer):
     state.override_referer = referer
@@ -606,7 +607,7 @@ class action_view(urlvcr_action):
     ui._cprint('bright cyan', str(state.info))
     ui._print(state.body)
 
-class action_meta(urlvcr_action, HTMLParser.HTMLParser):
+class action_meta(urlvcr_action, html.parser.HTMLParser):
   def valid(self, state, ui=None):
     if state.state is None or state.state.body is None:
       return False
@@ -618,7 +619,7 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
     self.update(ui, state)
     if self.refresh is None:
       raise ReplayFailure('No meta refresh tag, or unable to parse')
-    url = urlparse.urljoin(state.url, self.refresh)
+    url = urllib.parse.urljoin(state.url, self.refresh)
     state.request(ui, url)
 
   def update(self, ui, state):
@@ -629,20 +630,20 @@ class action_meta(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError as e:
+      except html.parser.HTMLParseError as e:
         if self._ui:
           self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         else:
-          print 'HTMLParseError: %s'%e
+          print('HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
         food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
-        HTMLParser.HTMLParser.reset(self) # Reset count
+        html.parser.HTMLParser.reset(self) # Reset count
         continue
       break
   def reset(self):
     self.refresh = None
-    HTMLParser.HTMLParser.reset(self)
+    html.parser.HTMLParser.reset(self)
   def handle_starttag(self, tag, attrs):
     if tag == 'meta':
       attrs = dict(attrs)
@@ -675,14 +676,14 @@ class action_auth(urlvcr_action):
   def ask_params(self, ui, state):
     realm = self.get_realm_from_state(ui, state)
     if not realm:
-      realm = raw_input('No www-authenticate header found! Enter realm (ASSUMING BASIC AUTH): ')
+      realm = input('No www-authenticate header found! Enter realm (ASSUMING BASIC AUTH): ')
     import getpass # FIXME: UI
     if ui.confirm('Override username?', False):
-      username = ('s', raw_input('Username: '))
+      username = ('s', input('Username: '))
     else:
       username = ('u', None)
       if state.username is None:
-        state.username = raw_input('Enter Username: ')
+        state.username = input('Enter Username: ')
     if ui.confirm('Override password?', False):
       password = ('s', getpass.getpass('Password: '))
     elif ui.confirm('Authenticate with old password?', True):
@@ -698,17 +699,17 @@ class action_auth(urlvcr_action):
     url = url.rsplit('/',1)[0] # Directory?
     return ('basic', realm, url, username, password)
 
-  def apply(self, ui, state,
-            (auth_type, realm, url,
+  def apply(self, ui, state, xxx_todo_changeme1):
+    (auth_type, realm, url,
              (username_type, username_override),
-             (password_type, password_override))):
+             (password_type, password_override)) = xxx_todo_changeme1
     if auth_type != 'basic':
       raise ReplayFailure('only basic authentication supported for now')
     srv_realm = self.get_realm_from_state(ui, state)
     if srv_realm is not None and srv_realm != realm:
       ui._cprint('bright yellow', "WARNING: Realm in script differs from requested realm on website - using realm from website")
       realm = srv_realm
-    pwmgr = urllib2.HTTPPasswordMgr()
+    pwmgr = urllib.request.HTTPPasswordMgr()
     if username_type == 'u':
       username = state.username
     elif username_type == 's':
@@ -725,10 +726,10 @@ class action_auth(urlvcr_action):
     else:
       raise ReplayFailure('Invalid password type')
     pwmgr.add_password(realm, url, username, password)
-    authmgr = urllib2.HTTPBasicAuthHandler(pwmgr)
+    authmgr = urllib.request.HTTPBasicAuthHandler(pwmgr)
     # FIXME: This won't be undone properly, and will mess up if we auth multiple times:
     state.handlers.append(authmgr)
-    state.opener = urllib2.build_opener(*state.handlers)
+    state.opener = urllib.request.build_opener(*state.handlers)
     ui._cprint('bright yellow', "Authentication credentials set - you probably want to refresh now ('r').")
 
 class action_refresh(urlvcr_action):
@@ -739,7 +740,7 @@ class action_refresh(urlvcr_action):
   def apply(self, ui, state, params):
     state.request(ui, state.url)
 
-class action_frame(urlvcr_action, HTMLParser.HTMLParser):
+class action_frame(urlvcr_action, html.parser.HTMLParser):
   def valid(self, state):
     return state.state is not None and state.body is not None
   def help(self, state):
@@ -750,14 +751,15 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
       frame = select_element(ui, "Enter part of the frame name or URL to enter: ", self.frames)
       name = frame['name']
       src = frame['src']
-      url = urlparse.urljoin(state.url, src)
+      url = urllib.parse.urljoin(state.url, src)
       if ui.confirm('Enter frame "%s" to %s'%(ui._ctext('bright yellow', name), ui._ctext('bright blue', url)), True):
         return (name, src)
       raise _CancelAction('User aborted')
-  def apply(self, ui, state, (name, src)):
+  def apply(self, ui, state, xxx_todo_changeme2):
+    (name, src) = xxx_todo_changeme2
     self.update(ui, state)
     frame = find_element(self.frames, [name, src])
-    url = urlparse.urljoin(state.url, frame['src'])
+    url = urllib.parse.urljoin(state.url, frame['src'])
     state.request(ui, url)
 
   class Frame(dict):
@@ -786,18 +788,18 @@ class action_frame(urlvcr_action, HTMLParser.HTMLParser):
       try:
         self.feed(food)
         self.close()
-      except HTMLParser.HTMLParseError as e:
+      except html.parser.HTMLParseError as e:
         self._ui._cprint('bright red', 'HTMLParseError: %s'%e)
         lineno = e.lineno
         offset = e.offset
         food = '\n'.join(food.split('\n')[lineno-1:])[offset+1:]
-        HTMLParser.HTMLParser.reset(self) # Reset count
+        html.parser.HTMLParser.reset(self) # Reset count
         continue
       break
   def reset(self):
     self.refresh = None
     self.frames = []
-    HTMLParser.HTMLParser.reset(self)
+    html.parser.HTMLParser.reset(self)
   def handle_starttag(self, tag, attrs):
     if tag == 'frame':
       self.frames.append(action_frame.Frame(attrs, self._ui))
@@ -809,7 +811,7 @@ class action_save(urlvcr_action):
   def help(self, state):
     return "Save the current page to a file"
   def ask_params(self, ui, state):
-    filename = raw_input('Filename: ')
+    filename = input('Filename: ')
     if not filename:
       raise _CancelAction('User aborted')
     return filename
@@ -831,7 +833,7 @@ class action_validate(urlvcr_action):
   def help(self, state):
     return "Validate page by matching arbitrary string"
   def ask_params(self, ui, state):
-    match = raw_input('String to match: ')
+    match = input('String to match: ')
     if not match:
       raise _CancelAction('User aborted')
     return match
@@ -903,14 +905,14 @@ def apply_action(ui, state, action):
     assert(a.changes_state)
     state.pop()
     raise
-  except (urllib2.URLError, socket.timeout):
+  except (urllib.error.URLError, socket.timeout):
     assert(a.changes_state)
     ui._cprint('red', 'Unhandled URLError, undoing last action')
     state.pop()
     raise ReplayFailure('Unhandled URLError')
 
 if hasattr(urllib2, 'HTTPSHandler'):
-  class HTTPSHandlerTLS1(urllib2.HTTPSHandler):
+  class HTTPSHandlerTLS1(urllib.request.HTTPSHandler):
     """
     Workaround for some sites that fall over during the SSL handshake when
     trying to negotiate using a version of TLS greater than 1.0. I see this on
@@ -922,8 +924,8 @@ if hasattr(urllib2, 'HTTPSHandler'):
 
     https://bugs.launchpad.net/ubuntu/+source/openssl/+bug/965371
     """
-    import httplib
-    class HTTPSConnectionTLS1(httplib.HTTPSConnection):
+    import http.client
+    class HTTPSConnectionTLS1(http.client.HTTPSConnection):
       def connect(self):
         "Connect to a host on a given (SSL) port."
         sock = socket.create_connection((self.host, self.port),
@@ -961,11 +963,11 @@ class urlvcr(object):
         self.override_referer = self.parent.override_referer
         self.user_agent = self.parent.user_agent
       else:
-        self.cookies = cookielib.CookieJar()
+        self.cookies = http.cookiejar.CookieJar()
         # self.handlers = [urllib2.HTTPCookieProcessor(self.cookies)]
         # XXX Workaround for SSL TLS version negotiation failure:
-        self.handlers = [urllib2.HTTPCookieProcessor(self.cookies), HTTPSHandlerTLS1]
-        self.opener = urllib2.build_opener(*self.handlers)
+        self.handlers = [urllib.request.HTTPCookieProcessor(self.cookies), HTTPSHandlerTLS1]
+        self.opener = urllib.request.build_opener(*self.handlers)
         self.url = None
         self.info = None
         self.body = None
@@ -987,17 +989,17 @@ class urlvcr(object):
 
   def request(self, ui, url, post=None, get=''):
     # FIXME: show progress:
-    import urllib
+    import urllib.request, urllib.parse, urllib.error
     if post:
-      post = urllib.urlencode(post)
+      post = urllib.parse.urlencode(post)
     if get:
-      get = '?'+urllib.urlencode(get)
+      get = '?'+urllib.parse.urlencode(get)
 
     # In case we are at a URL like http://foo and follow a link like '?bar':
     if url.count('/') == 2:
       url += '/'
 
-    request = urllib2.Request(url+get, post)
+    request = urllib.request.Request(url+get, post)
 
     referer = None
     if self.state.override_referer:
@@ -1026,14 +1028,14 @@ class urlvcr(object):
           # Python 2.5 does not support a timeout throught urllib2:
           socket.setdefaulttimeout(TIMEOUT)
           response = self.state.opener.open(request)
-      except urllib2.HTTPError as e:
+      except urllib.error.HTTPError as e:
         if e.code == 401:
           ui._cprint('bright red', 'HTTP status code: %s: %s'%(e.code, e.msg))
           response = e
         else:
           ui._cprint('bright red', 'HTTP status code: %s: %s'%(e.code, e.msg))
           raise
-      except (urllib2.URLError, socket.timeout, ssl.SSLError) as e:
+      except (urllib.error.URLError, socket.timeout, ssl.SSLError) as e:
         if hasattr(e, 'reason'):
           ui._cprint('bright red', 'Failed to reach server: %s'%e.reason)
         else:
@@ -1055,7 +1057,7 @@ class urlvcr(object):
       tries -= 1
       try:
         self.state.body += response.read()
-      except (socket.timeout, urllib2.URLError, ssl.SSLError) as e:
+      except (socket.timeout, urllib.error.URLError, ssl.SSLError) as e:
         ui._cprint('bright red', 'Exception while reading page: %s'%e)
         if tries:
           ui._cprint('red', 'Retrying...')
@@ -1116,13 +1118,13 @@ def main(ui, script=None, username=None, oldpass=None, newpass=None):
 def json_str(v):
   def json_str_dict(d):
     n = {}
-    for (k,v) in d.items():
+    for (k,v) in list(d.items()):
       n[json_str(k)] = json_str(v)
     return n
   def json_str_list(v):
     return [ json_str(x) for x in v ]
 
-  if type(v) in (str, unicode):
+  if type(v) in (str, str):
     return str(v)
   if type(v) == dict:
     return json_str_dict(v)
@@ -1164,7 +1166,7 @@ if __name__ == '__main__':
       if 'oldpass' in credentials: oldpass=credentials['oldpass']
       if 'newpass' in credentials: newpass=credentials['newpass']
     elif ui.confirm('Would you like to encode some now (NOTE: this is not using a secure encoding)?', False):
-      username = raw_input('Username: ')
+      username = input('Username: ')
       oldpass = getpass.getpass('OLD Password: ')
       newpass = getpass.getpass('NEW Password: ')
       credentials = {}

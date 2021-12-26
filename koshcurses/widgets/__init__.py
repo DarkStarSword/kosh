@@ -17,10 +17,10 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 import urwid
-import utf8
+from . import utf8
 import types
 
-from viCommandBar import viCommandBar
+from .viCommandBar import viCommandBar
 
 class keymapwid(object):
   keymap = {}
@@ -140,7 +140,7 @@ class LineColumns(urwid.WidgetWrap):
     if widget_list:
       self.widget_list = widget_list
     def extractsize(widget):
-      if type(widget) == types.TupleType:
+      if type(widget) == tuple:
         return widget[:2] + tuple([urwid.Pile( [self.hline, widget[2], self.hline], 1)])
       return urwid.Pile( [self.hline, widget, self.hline], 1)
     self.columns = urwid.Columns( [self.left] +

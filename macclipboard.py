@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:sts=2:expandtab
 
-from __future__ import print_function
+
 from ui import ui_tty, ui_null
 import sys
 import select
@@ -70,5 +70,5 @@ sendViaClipboard = sendViaClipboardSimple
 
 if __name__ == '__main__':
   args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
-  blobs = zip([ "Item %i"%x for x in range(len(args)) ], args)
+  blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))
   sendViaClipboardSimple(blobs, ui=ui_tty())

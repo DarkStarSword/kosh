@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:sts=2:expandtab
 
-from __future__ import print_function
+
 from ui import ui_tty, ui_null
 import sys
 import select
@@ -81,7 +81,7 @@ if sys.platform == 'cygwin':
       if kw.pop("use_last_error", False):
           flags |= _FUNCFLAG_USE_LASTERROR
       if kw:
-          raise ValueError("unexpected keyword argument(s) %s" % kw.keys())
+          raise ValueError("unexpected keyword argument(s) %s" % list(kw.keys()))
       try:
           return _win_functype_cache[(restype, argtypes, flags)]
       except KeyError:
@@ -275,14 +275,14 @@ class ClipboardWindow(object):
       if fd == sys.stdin.fileno():
         char = sys.stdin.read(1)
         if char == '\n':
-          self.next()
+          next(self)
         elif char == '\x1b':
           empty_clipboard(self.ui, self.hWnd)
           user32.DestroyWindow(self.hWnd)
       elif fd in ui_fds:
         self.ui.mainloop.event_loop._loop()
 
-  def next(self):
+  def __next__(self):
     try:
       self.blob = next(self.blobs)
     except StopIteration:
@@ -305,7 +305,7 @@ class ClipboardWindow(object):
     elif Msg == winmisc.WM_TIMER:
       if wParam == 0:
         user32.KillTimer(hWnd, 0)
-        self.next()
+        next(self)
       elif wParam == 1:
         # FIXME: This is a hack to pump urwid main loop and process stdin
         self.pump_tty_ui_main_loop()
@@ -400,5 +400,5 @@ def sendViaClipboard(blobs, record = None, ui=ui_null()):
 
 if __name__ == '__main__':
   args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
-  blobs = zip([ "Item %i"%x for x in range(len(args)) ], args)
+  blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))
   sendViaClipboard(blobs, ui=ui_tty())

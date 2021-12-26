@@ -30,12 +30,12 @@ def promptOptions(prompt, options, default, help=None):
   """
   def showHelp():
     for (i,o) in enumerate(options):
-      print '%s: %s'%(o, help[i])
+      print('%s: %s'%(o, help[i]))
   promptoptions = ','.join([ x.upper() if x==default else x.lower() for x in options ])
   if help:
     promptoptions += ',?'
   while True:
-    ret = raw_input('%s (%s): '%(prompt, promptoptions)).lower()
+    ret = input('%s (%s): '%(prompt, promptoptions)).lower()
     if ret == '': return default
     if ret in options: return ret
     if ret == '?' and help: showHelp()
@@ -54,7 +54,7 @@ def prompt(prompt):
 
   Simple prompt for arbitrary input. Does not support a default value.
   """
-  return raw_input(prompt+': ')
+  return input(prompt+': ')
 
 # FIXME: Use database constants and (possibly) list of all previously used values
 knownFields = ['name','Username','Password','URL','Notes']
@@ -85,13 +85,13 @@ def askHeader(fp, cfp, field):
       """
       while True:
         try:
-          line = cfp.next()
+          line = next(cfp)
           if line[field]:
             found[0] = True
             return line[field]
         except StopIteration:
           if not found[0]:
-            print 'No data in field %i, disregarding'%field
+            print('No data in field %i, disregarding'%field)
             return None
           fp.seek(loc)
           continue
@@ -127,11 +127,11 @@ def askHeaders(fp, cfp, headers):
   if headers:
     # TODO: Confirm headers. (TTY mode needs to implement prompt with default value - readline)
     # TODO: Strip blank headers and fields
-    return map(translateCase, headers)
+    return list(map(translateCase, headers))
 
   if headers is None:
     loc = fp.tell()
-    line = cfp.next()
+    line = next(cfp)
     fp.seek(loc)
     headers = [None]*len(line)
 
@@ -150,12 +150,12 @@ def importCSV(filename, headers, db):
   del sample
   cfp = csv.reader(fp, dl)
   if not headers and has_header:
-    headers = cfp.next()
+    headers = next(cfp)
   # else - verify correct number of headers passed in
 
   headers = askHeaders(fp, cfp, headers)
 
-  print 'Importing... '
+  print('Importing... ')
   for line in cfp:
     entry = {}
     for (i, field) in enumerate(line):
@@ -169,7 +169,7 @@ def importCSV(filename, headers, db):
     else:
       sys.stdout.write('x')
   db.write()
-  print ' done'
+  print(' done')
   fp.close()
 
 passdb_default = '~/.kosh/koshdb' # FIXME: Also declared in kosh

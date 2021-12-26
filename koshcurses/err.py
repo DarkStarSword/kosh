@@ -27,4 +27,4 @@ def showErr(msg):
         raise urwid.ExitMainLoop()
     urwid.MainLoop(lb, unhandled_input = exit_on_q).run()
   finally:
-    print msg
+    print(msg)

@@ -229,7 +229,7 @@ class passEntry(dict):
       order = self.meta['FieldOrder']
 
     def sortedGen(self, order):
-      fields = self.keys()
+      fields = list(self.keys())
       for field in order:
         if field in fields:
           yield field
@@ -250,7 +250,7 @@ class passEntry(dict):
       order = self.meta['CopyFieldOrder']
 
     def sortedGen(self, order):
-      fields = self.keys()
+      fields = list(self.keys())
       for field in order:
         if field in fields:
           yield (field, self[field])
@@ -296,11 +296,11 @@ class KoshDB(dict):
     from copy import copy
     bug = False
 
-    entries = copy(self._masterKeys) + self.values() + copy(self._oldEntries)
+    entries = copy(self._masterKeys) + list(self.values()) + copy(self._oldEntries)
 
     dirname = os.path.expanduser(os.path.dirname(filename))
     if not os.path.exists(dirname):
-      os.makedirs(dirname, mode=0700)
+      os.makedirs(dirname, mode=0o700)
     with NamedTemporaryFile(mode='wb', delete=False,
         prefix=os.path.basename(filename),
         dir=dirname) as fp:
@@ -473,10 +473,10 @@ if __name__ == '__main__':
     db = KoshDB(filename, prompt)
     e = passEntry(db._masterKeys[0]) # FIXME: Doing this creates a strong reference to the master key - timers will not automatically be destroyed
     e['foo'] = 'bar'
-    print e._blob
+    print(e._blob)
 
     d = passEntry(db._masterKeys[0], passEntry.BLOB_PREFIX + e._blob)
-    print d['foo']
+    print(d['foo'])
     del e
     del d
     del db

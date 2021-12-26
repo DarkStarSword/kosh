@@ -23,9 +23,9 @@ from ui import ui_tty, ui_null
 
 defSelections = ['PRIMARY', 'SECONDARY', 'CLIPBOARD']
 blacklist = ['klipper', 'xclipboard', 'wmcliphist', '<unknown>', 'qtcreator', 'diodon']
-blacklist_re = map(re.compile, [
+blacklist_re = list(map(re.compile, [
   'TightVNC: .*', # Still works (F8->local->remote requests as "popup@None") until it steals the PRIMARY selection
-])
+]))
 # TODO: Option to re-grab if PRIMARY selection is stolen. Maybe blacklist certain apps like TightVNC?
 
 class XFailConnection(Exception): pass
@@ -204,9 +204,9 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
   # stdout, so temporarily redirect it:
   ui.status('Connecting to display, stand by...')
   ui.mainloop.draw_screen()
-  import sys, StringIO
+  import sys, io
   saved_stdout = sys.stdout
-  sys.stdout = StringIO.StringIO()
+  sys.stdout = io.StringIO()
   try:
     display = Xlib.display.Display()
   except Xerror.DisplayError:
@@ -304,4 +304,4 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
 if __name__ == '__main__':
   import sys
   args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
-  sendViaClipboard(zip([ "Item %i"%x for x in range(len(args)) ], args), ui=ui_tty())
+  sendViaClipboard(list(zip([ "Item %i"%x for x in range(len(args)) ], args)), ui=ui_tty())

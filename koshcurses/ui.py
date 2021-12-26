@@ -18,9 +18,10 @@
 
 import urwid
 import weakref
-import widgets
+from . import widgets
 import time
 import sys
+from functools import reduce
 
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -39,7 +40,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.db = db
     self.pwForm = pwForm
     self.ui = ui
-    self.visibleEntries = self.db.keys()
+    self.visibleEntries = list(self.db.keys())
     self.refresh()
     urwid.WidgetWrap.__init__(self, self.lb)
 
@@ -163,15 +164,15 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   def search(self, search):
     import string
     if not search:
-      self.visibleEntries = self.db.keys()
+      self.visibleEntries = list(self.db.keys())
       ret = None
     else:
       self.visibleEntries = []
       for entry in self.db:
         # FIXME: Don't (optionally?) search on other protected fields
-        if reduce(lambda x,y: x or search.lower() in y, map(string.lower,
-          [entry]+[v for (k,v) in self.db[entry].items()
-            if k.lower() not in ['password']]), False):
+        if reduce(lambda x,y: x or search.lower() in y, list(map(string.lower,
+          [entry]+[v for (k,v) in list(self.db[entry].items())
+            if k.lower() not in ['password']])), False):
             self.visibleEntries.append(entry)
       ret = len(self.visibleEntries)
     self.refresh()
@@ -274,7 +275,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       newpass = self.entry['passwd']
     # FIXME: Should walk list to find this
     oldpass = self.entry['OldPassword']
-    import other_ui.ui_tty as ui
+    from . import other_ui.ui_tty as ui
     old = ui.reset()
     try:
       script = httppasswd.main(ui(), None, username, oldpass, newpass)
@@ -292,7 +293,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def save_ui(fn):
     def _save_ui(*args, **kwargs):
-      import other_ui.ui_tty as ui
+      from . import other_ui.ui_tty as ui
       import time
       old = ui.reset()
       try:

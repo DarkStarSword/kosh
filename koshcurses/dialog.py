@@ -17,7 +17,8 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 import urwid
-import widgets
+from . import widgets
+from functools import reduce
 
 class inputDialog(urwid.WidgetWrap):
   def __init__(self, caption='', txt='', message=None, width=0):
@@ -47,4 +48,4 @@ class inputDialog(urwid.WidgetWrap):
 
 if __name__=='__main__':
   d = inputDialog(message='Enter master password:', width=30)
-  print d.showModal()
+  print(d.showModal())
