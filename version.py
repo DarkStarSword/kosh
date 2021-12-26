@@ -17,11 +17,14 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys
+import os
 import subprocess
 import importlib
 import site
 
 __version__ = 'v0.1 development' #FIXME: use git describe if from git repository
+
+HAS_TERMUX_API = False
 
 def import_ask_install(module, package, msg, version_check=None, uninstall=None):
   try:
@@ -69,3 +72,8 @@ def checkUrwid(required):
 
 def checkXClipboard():
   import_ask_install('Xlib', 'xlib', 'WARNING: Python-Xlib not installed, clipboard integration will be unavailable')
+
+def checkTermuxAPI():
+  global HAS_TERMUX_API
+  HAS_TERMUX_API = not not import_ask_install('termux', 'termux-api', 'WARNING: Python Termux-API not installed, clipboard integration will be unavailable')
+  # TODO: Verify termux API Android app + package are both installed

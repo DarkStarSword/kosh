@@ -47,6 +47,7 @@ urwid_req_version = '0.9.9.1' # Fixme: what version is actually required?
 
 import version
 import sys
+import os
 __version__ = version.__version__
 version.checkCrypto()
 version.checkUrwid(urwid_req_version)
@@ -54,6 +55,8 @@ if sys.platform in ('win32', 'cygwin'):
   pass
 elif sys.platform == 'darwin':
   pass
+elif 'TERMUX_VERSION' in os.environ:
+  version.checkTermuxAPI()
 else:
   version.checkXClipboard()
 
