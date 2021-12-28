@@ -6,11 +6,15 @@ import sys
 import select
 import termux
 
-def copy_text_simple(blob):
+def copy_text_simple(blob, ui):
+  ui.status('Standby, termux clipboard is rediculously slow...', append=True)
+  ui.mainloop.draw_screen()
   text = str(blob) # blob may be utf8
   termux.Clipboard.setclipboard(blob)
 
 def empty_clipboard(ui):
+  ui.status('Standby, termux clipboard is rediculously slow...', append=True)
+  ui.mainloop.draw_screen()
   termux.Clipboard.setclipboard('')
   ui.status('Clipboard Cleared', append=True)
 
@@ -51,7 +55,7 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
       ui_tty.restore_cbreak(old)
   ui.status('')
   for (field, blob) in blobs:
-    copy_text_simple(blob)
+    copy_text_simple(blob, ui)
     ui.status("Copied %s for '%s' to clipboard, press enter to continue..."%(field.upper(),record), append=True)
     if not tty_ui_loop(ui):
       break
