@@ -89,7 +89,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   def select(self, button):
     self.ui.touch()
     showing = self.db[button.get_label()]
-    if self.showing == showing:
+    if self.showing in showing.history():
       # Either pressed enter, or clicked a second time on same entry
       self.pwForm.reveal(self.showing)
     else:

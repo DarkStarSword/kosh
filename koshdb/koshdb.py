@@ -177,6 +177,12 @@ class passEntry(dict):
       newest = newest.newer
     return newest
 
+  def history(self):
+    node = self
+    while node is not None:
+      yield node
+      node = node.older
+
   def __str__(self):
     return self.BLOB_PREFIX + self._blob
 
