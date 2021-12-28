@@ -23,9 +23,9 @@ import site
 
 __version__ = 'v0.1 development' #FIXME: use git describe if from git repository
 
-def import_ask_install(module, package, msg):
+def import_ask_install(module, package, msg, version_check=None, uninstall=None):
   try:
-      return __import__(module)
+      ret = __import__(module)
   except ImportError:
       print(msg)
       answer = None
@@ -33,12 +33,30 @@ def import_ask_install(module, package, msg):
         answer = input('Install %s with pip? (y/n) ' % package).lower()
       if answer == 'y':
         subprocess.call([sys.executable] + "-m ensurepip --user".split())
+        if uninstall:
+          subprocess.call([sys.executable, "-m", "pip", "uninstall", uninstall])
         subprocess.call([sys.executable, "-m", "pip", "install", package, "--user"])
         importlib.reload(site) # Ensure site-packages paths are up to date if pip just created it
-        return __import__(module)
+        ret = __import__(module)
+  if version_check is not None and not version_check(ret):
+    print('%s version too old' % module)
+    answer = None
+    while answer not in ('y', 'n'):
+      answer = input('Upgrade %s with pip? (y/n) ' % package).lower()
+      if answer == 'y':
+        subprocess.call([sys.executable] + "-m ensurepip --user".split())
+        if uninstall:
+          subprocess.call([sys.executable, "-m", "pip", "uninstall", uninstall])
+        subprocess.call([sys.executable, "-m", "pip", "install", package, "--upgrade", "--user"])
+        importlib.reload(site) # Ensure site-packages paths are up to date if pip just created it
+        ret = __import__(module)
+  return ret
 
 def checkCrypto():
-  if not import_ask_install('Crypto', 'pycrypto', 'ERROR: Python crypto library not found'):
+  def version_check(module):
+    return module.version_info[0] >= 3
+  if not import_ask_install('Crypto', 'pycryptodome', 'ERROR: Python crypto library not found',
+      version_check=version_check, uninstall='pycrypto'):
     sys.exit(1)
 
 def checkUrwid(required):

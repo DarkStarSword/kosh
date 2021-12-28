@@ -94,7 +94,12 @@ class _masterKey(object):
       return data + b'\0'*padding + bytes([padding+1])
     data = data.encode('utf8')
     checksum = Crypto.Hash.SHA.new(data).digest()
-    a = Crypto.Cipher.AES.new(self._key)
+    try:
+      a = Crypto.Cipher.AES.new(self._key)
+    except TypeError:
+      # pycryptodome changed function signature to pass mode. Using ECB for
+      # backwards compatibility. FIXME: Upgrade db to something stronger?
+      a = Crypto.Cipher.AES.new(self._key, mode=Crypto.Cipher.AES.MODE_ECB)
     s = randBits(256)
     data = Crypto.Util.strxor.strxor(data,extendstr(s, len(data)))
     e = a.encrypt(pad(data + s + checksum, Crypto.Cipher.AES.block_size))
@@ -111,7 +116,12 @@ class _masterKey(object):
       padding = ord(data[-1:])
       return data[:-padding]
     d = base64.decodebytes(blob)
-    a = Crypto.Cipher.AES.new(self._key)
+    try:
+      a = Crypto.Cipher.AES.new(self._key)
+    except TypeError:
+      # pycryptodome changed function signature to pass mode. Using ECB for
+      # backwards compatibility. FIXME: Upgrade db to something stronger?
+      a = Crypto.Cipher.AES.new(self._key, mode=Crypto.Cipher.AES.MODE_ECB)
     deciphered = unpad(a.decrypt(d))
     decrypted = deciphered[:-Crypto.Hash.SHA.digest_size-32]
     salt      = deciphered[-Crypto.Hash.SHA.digest_size-32:-Crypto.Hash.SHA.digest_size]
@@ -126,7 +136,12 @@ class _masterKey(object):
     h = Crypto.Hash.SHA256.new(passphrase.encode('utf8')).digest()
     s = randBits(256)
     k = Crypto.Util.strxor.strxor(h,s)
-    a = Crypto.Cipher.AES.new(k)
+    try:
+      a = Crypto.Cipher.AES.new(k)
+    except TypeError:
+      # pycryptodome changed function signature to pass mode. Using ECB for
+      # backwards compatibility. FIXME: Upgrade db to something stronger?
+      a = Crypto.Cipher.AES.new(k, mode=Crypto.Cipher.AES.MODE_ECB)
     checksum = Crypto.Hash.SHA256.new(key).digest()
     e = a.encrypt(key + checksum)
     return base64.encodebytes(e+s).replace(b'\n',b'')
@@ -138,7 +153,12 @@ class _masterKey(object):
     e = d[:-256//8]
     s = d[-256//8:]
     k = Crypto.Util.strxor.strxor(h,s)
-    a = Crypto.Cipher.AES.new(k)
+    try:
+      a = Crypto.Cipher.AES.new(k)
+    except TypeError:
+      # pycryptodome changed function signature to pass mode. Using ECB for
+      # backwards compatibility. FIXME: Upgrade db to something stronger?
+      a = Crypto.Cipher.AES.new(k, mode=Crypto.Cipher.AES.MODE_ECB)
     deciphered = a.decrypt(e)
     key      = deciphered[:-Crypto.Hash.SHA256.digest_size]
     checksum = deciphered[-Crypto.Hash.SHA256.digest_size:]
