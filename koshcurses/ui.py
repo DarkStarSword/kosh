@@ -50,14 +50,22 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.visibleEntries = []
     self.refresh()
 
-  def refresh(self):
-    self.content = [ urwid.Button(x, self.select) for x in sorted(self.visibleEntries, key=lambda x:x.lower()) ]
+  def refresh(self, focus_entry=None):
+    if focus_entry is not None and focus_entry not in self.visibleEntries:
+      self.search(None)
+    self.visibleEntries.sort(key = lambda x: x.lower())
+    self.content = [ urwid.Button(x, self.select) for x in self.visibleEntries ]
     self.lb = urwid.ListBox(self.content)
     self.selection = 0
     self._set_w(self.lb)
     if len(self.visibleEntries):
       try:
-        self.showing = self.db[self.lb.get_focus()[0].get_label()]
+        if focus_entry:
+          self.showing = self.db[focus_entry]
+          self.lb.set_focus(self.visibleEntries.index(focus_entry))
+          self.ui.container.set_focus(0)
+        else:
+          self.showing = self.db[self.lb.get_focus()[0].get_label()]
       except KeyError:
         return self.search(None)
       self.pwForm.show(self.showing)
@@ -82,7 +90,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   def select(self, button):
     self.ui.touch()
     showing = self.db[button.get_label()]
-    if self.showing == showing:
+    if self.showing in showing.history():
       # Either pressed enter, or clicked a second time on same entry
       self.pwForm.reveal(self.showing)
     else:
@@ -495,7 +503,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     self.db[entry.name] = entry
     self.db.write()
     if self.pwList:
-      self.pwList.refresh()
+      self.pwList.refresh(entry.name)
 
   def cancel(self):
     # Necessary to get focus back
