@@ -77,3 +77,7 @@ def checkTermuxAPI():
   global HAS_TERMUX_API
   HAS_TERMUX_API = not not import_ask_install('termux', 'termux-api', 'WARNING: Python Termux-API not installed, clipboard integration will be unavailable')
   # TODO: Verify termux API Android app + package are both installed
+
+def is_wsl():
+  import platform
+  return 'microsoft-standard' in platform.uname().release
