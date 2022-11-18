@@ -89,6 +89,17 @@ class ui_tty(object):
     return old
 
   @staticmethod
+  def clear():
+    # FIXME: Detect if terminal supports these codes
+    # https://en.wikipedia.org/wiki/ANSI_escape_code ED "Erase in Display"
+    # Try clear screen + scrollback (not supported on all terminals, such as WSL Windows Terminal):
+    print('\x1b[3J', end='')
+    # Try just clear screen (Needed for WSL Windows Terminal):
+    print('\x1b[2J', end='')
+    # Move cursor to 1,1
+    print('\x1b[1;1H', end='')
+
+  @staticmethod
   def restore(old):
     (i, o, e) = old
     tty.tcsetattr(sys.stdin.fileno(), tty.TCSADRAIN, i)

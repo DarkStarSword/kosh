@@ -91,11 +91,19 @@ def main():
     return dialog.showModal()
   try:
     db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt)
+    u = koshcurses.ui.koshUI(db)
+    u.showModal()
   except koshdb.koshdb.FileLocked:
     print('Password database locked by another instance of kosh')
     return
-  u = koshcurses.ui.koshUI(db)
-  u.showModal()
+  finally:
+    # Clear screen on exit to ensure any displayed passwords are removed from
+    # the terminal. On most platforms this will be done automatically when
+    # exiting urwid, but some platforms like WSL Windows Terminal doesn't do
+    # this automatically so we explicitly do it here.
+    if version.is_wsl():
+      import ui.ui_tty
+      ui.ui_tty.clear()
 
 if __name__ == '__main__':
   main()
