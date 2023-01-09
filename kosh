@@ -51,8 +51,10 @@ import os
 __version__ = version.__version__
 version.checkCrypto()
 version.checkUrwid(urwid_req_version)
-if sys.platform in ('win32', 'cygwin') or version.is_wsl():
+if sys.platform in ('win32', 'cygwin'):
   pass
+elif version.is_wsl():
+  version.checkWSLClipboard()
 elif sys.platform == 'darwin':
   pass
 elif 'TERMUX_VERSION' in os.environ:

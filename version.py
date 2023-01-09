@@ -81,3 +81,18 @@ def checkTermuxAPI():
 def is_wsl():
   import platform
   return 'microsoft-standard' in platform.uname().release
+
+def checkWSLClipboard():
+  import wslclipboard
+  native_python_is_stub = wslclipboard.native_python_is_stub()
+  if native_python_is_stub is None:
+    # No python.exe, not even the stub to install it
+    print('WSL detected, but native Python unavailable - clipboard implementation will be limited. Install native python and add to path to enable advanced clipboard support.\nPress enter to continue...')
+    input()
+  if native_python_is_stub is True:
+    print('WSL detected, but native Python not installed - clipboard implementation will be limited')
+    answer = None
+    while answer not in ('y', 'n'):
+      answer = input('Open Windows Store to install native Python for advanced clipboard integration? (y/n) ').lower()
+    if answer == 'y':
+      wslclipboard.attempt_install_winstore_python()
