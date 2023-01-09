@@ -6,6 +6,7 @@ from ui import ui_tty, ui_null
 import sys
 import select
 import time
+import json
 
 # How many miliseconds to wait for the receiving application to retrieve the
 # clipboard contents before taking ownership again for the next value. This is
@@ -51,6 +52,7 @@ if sys.platform == 'cygwin':
     elif ctypes.sizeof(ctypes.c_longlong) == ctypes.sizeof(ctypes.c_void_p):
         WPARAM = ctypes.c_ulonglong
         LPARAM = ctypes.c_longlong
+    LPCSTR = LPSTR = ctypes.c_char_p
     LPCWSTR = LPWSTR = ctypes.c_wchar_p
     class POINT(ctypes.Structure):
         _fields_ = [("x", ctypes.c_long),
@@ -138,13 +140,14 @@ class winmisc(object):
                   ("hIcon", wintypes.HANDLE),
                   ("hCursor", wintypes.HANDLE),
                   ("hBrush", wintypes.HANDLE),
-                  ("lpszMenuName", wintypes.LPCWSTR),
-                  ("lpszClassName", wintypes.LPCWSTR),
+                  ("lpszMenuName", wintypes.LPCSTR),
+                  ("lpszClassName", wintypes.LPCSTR),
                   ("hIconSm", wintypes.HANDLE)]
 
 try:
   # Native windows python needs to use the right calling conventions
-  user32 = ctypes.windll.user32
+  #user32 = ctypes.windll.user32
+  user32 = ctypes.WinDLL('user32', use_last_error=True)
   kernel32 = ctypes.windll.kernel32
   #gdi32 = ctypes.windll.gdi32
   if sys.maxsize > 2**32:
@@ -164,7 +167,8 @@ try:
     user32.OpenClipboard.restype = wintypes.BOOL
     user32.CloseClipboard.restype = wintypes.BOOL
     user32.EmptyClipboard.restype = wintypes.BOOL
-
+    user32.DefWindowProcW.argtypes = (wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM)
+    user32.DefWindowProcW.restype = ctypes.c_int
 except AttributeError:
   # Cygwin lacks the above, but seems happy with this:
   user32 = ctypes.CDLL("user32.dll")
@@ -184,6 +188,7 @@ def defer_clipboard_copy(hWnd, formats=[winmisc.CF_TEXT]):
 
 def copy_text_deferred(blob):
   text = str(blob) + '\0' # blob may be utf8
+  text = text.encode('utf8')
 
   handle = kernel32.GlobalAlloc(winmisc.GMEM_MOVEABLE, len(text))
   buf = kernel32.GlobalLock(handle)
@@ -211,7 +216,7 @@ def empty_clipboard(ui, hWnd=None):
   ui.status('Clipboard Cleared', append=True)
 
 class ClipboardWindow(object):
-  CLASS_NAME = 'kosh'
+  CLASS_NAME = b'kosh\0'
   def __init__(self, blobs, record=None, ui=ui_null()):
     self.blobs = iter(blobs)
     self.blob = next(self.blobs)
@@ -238,7 +243,7 @@ class ClipboardWindow(object):
     wndClass.lpszClassName = self.CLASS_NAME
     wndClass.hIconSm = 0
 
-    regRes = user32.RegisterClassExW(ctypes.byref(wndClass))
+    regRes = user32.RegisterClassExA(ctypes.byref(wndClass))
 
     self.hWnd = user32.CreateWindowExA(
       0,self.CLASS_NAME,wname,
@@ -247,7 +252,7 @@ class ClipboardWindow(object):
       0,0,0,0,hInst,0)
 
     if not self.hWnd:
-      print('Failed to create window')
+      print('Failed to create window: %d' % ctypes.get_last_error())
       return
     #print('ShowWindow', user32.ShowWindow(self.hWnd, winmisc.SW_SHOW))
     #print('UpdateWindow', user32.UpdateWindow(self.hWnd))
