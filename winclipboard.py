@@ -422,6 +422,13 @@ def sendViaClipboard(blobs, record = None, ui=ui_null()):
     ui_tty.restore_cbreak(old)
 
 if __name__ == '__main__':
-  args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
-  blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))
-  sendViaClipboard(blobs, ui=ui_tty())
+  if len(sys.argv) == 2 and sys.argv[1] == "--wsl-proxy":
+    # This mode is used by WSL, as WSL cannot otherwise do advanced clipboard.
+    # It will call this script using the native Windows Python interpreter, and
+    # passes the blobs via stdin so they can't be seen in task manager.
+    (blobs, record) = json.loads(sys.stdin.read())
+    sendViaClipboard(blobs, record)
+  else:
+    args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
+    blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))
+    sendViaClipboard(blobs, ui=ui_tty())
