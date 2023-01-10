@@ -9,6 +9,7 @@
 
 from ui import ui_tty, ui_null
 import sys
+import os
 import select
 import subprocess
 
@@ -19,6 +20,7 @@ def copy_text_simple(blob):
 def copy_text_wsl_proxy(blob):
   #native_python = subprocess.run("python.exe winclipboard.py -".split(), input=blob)
   winpython = subprocess.Popen("python.exe winclipboard.py -".split(),
+      cwd=os.path.dirname(os.path.realpath(sys.argv[0])),
       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   winpython.stdin.write(blob.encode('utf8'))
   winpython.stdin.close()
