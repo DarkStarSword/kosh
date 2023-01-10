@@ -11,54 +11,66 @@ from ui import ui_tty, ui_null
 import sys
 import select
 import subprocess
-import json
 
 def copy_text_simple(blob):
   text = str(blob).encode('utf8') # blob may be utf8
   subprocess.run("clip.exe", input=text)
 
 def copy_text_wsl_proxy(blob):
-  native_python = subprocess.run("python.exe winclipboard.py -".split(), input=blob)
+  #native_python = subprocess.run("python.exe winclipboard.py -".split(), input=blob)
+  winpython = subprocess.Popen("python.exe winclipboard.py -".split(),
+      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  winpython.stdin.write(blob.encode('utf8'))
+  winpython.stdin.close()
+  return winpython
 
 def empty_clipboard(ui):
   copy_text_simple("")
   ui.status('Clipboard Cleared', append=True)
 
+def tty_ui_loop(ui, proxy_io=[]):
+  ui_fds = ui.mainloop.screen.get_input_descriptors()
+  if ui_fds is None: ui_fds = []
+  select_fds = set(ui_fds + proxy_io)
+
+  old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
+  try:
+    while 1:
+      ui.mainloop.draw_screen()
+      while True:
+        try:
+          timeout = None
+          (readable, ign, ign) = select.select(select_fds, [], [], timeout)
+        except select.error as e:
+          if e.args[0] == 4: continue # Interrupted system call
+          raise
+        break
+
+      if not readable:
+        break
+
+      for fd in readable:
+        if fd == sys.stdin.fileno():
+          char = sys.stdin.read(1)
+          if char == '\n':
+            return True
+          elif char == '\x1b':
+            return False
+        elif fd in proxy_io:
+          status = fd.readline()
+          if status == b'':
+            return True
+          # TODO: Show status messages (e.g. for clipboard copy ignored within ..ms),
+          # but only once the 'Ready to send' message is coming through at right time:
+          #ui.status(status.decode('utf8').strip(), append=True)
+        elif fd in ui_fds:
+          # This is a hack to redraw the screen - we really should
+          # restructure all this so as not to block instead:
+          ui.mainloop.event_loop._loop()
+  finally:
+    ui_tty.restore_cbreak(old)
+
 def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
-  def tty_ui_loop(ui):
-    ui_fds = ui.mainloop.screen.get_input_descriptors()
-    if ui_fds is None: ui_fds = []
-    select_fds = set(ui_fds)
-
-    old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
-    try:
-      while 1:
-        ui.mainloop.draw_screen()
-        while True:
-          try:
-            timeout = None
-            (readable, ign, ign) = select.select(select_fds, [], [], timeout)
-          except select.error as e:
-            if e.args[0] == 4: continue # Interrupted system call
-            raise
-          break
-
-        if not readable:
-          break
-
-        for fd in readable:
-          if fd == sys.stdin.fileno():
-            char = sys.stdin.read(1)
-            if char == '\n':
-              return True
-            elif char == '\x1b':
-              return False
-          elif fd in ui_fds:
-            # This is a hack to redraw the screen - we really should
-            # restructure all this so as not to block instead:
-            ui.mainloop.event_loop._loop()
-    finally:
-      ui_tty.restore_cbreak(old)
   ui.status('')
   for (field, blob) in blobs:
     copy_text_simple(blob)
@@ -68,11 +80,18 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
   empty_clipboard(ui)
 
 def sendViaClipboard(blobs, record = None, ui=ui_null()):
-  # TODO/FIXME: implement status messages, enter to skip, escape to cancel
-  ui.status("Sending %s to WSL clipboard proxy (FIXME: IMPLEMENT STATUS UPDATES + INPUT)" % record)
-  ui.mainloop.draw_screen()
-  ipc = json.dumps((list(blobs), record)).encode('utf8')
-  native_python = subprocess.run("python.exe winclipboard.py --wsl-proxy".split(), input=ipc)
+  ui.status('')
+  for (field, blob) in blobs:
+    child = copy_text_wsl_proxy(blob)
+    try:
+      ui.status("Ready to send %s for '%s'... (enter skips, escape cancels)"%(field.upper(),record), append=True)
+      if not tty_ui_loop(ui, [child.stdout]):
+        break
+    finally:
+      if child:
+        child.terminate()
+        child.wait()
+  empty_clipboard(ui)
 
 def native_python_is_stub():
   # .exe extension will run native Windows Python if found in path. Pass

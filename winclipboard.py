@@ -6,7 +6,6 @@ from ui import ui_tty, ui_null
 import sys
 import select
 import time
-import json
 
 # How many miliseconds to wait for the receiving application to retrieve the
 # clipboard contents before taking ownership again for the next value. This is
@@ -217,11 +216,12 @@ def empty_clipboard(ui, hWnd=None):
 
 class ClipboardWindow(object):
   CLASS_NAME = b'kosh\0'
-  def __init__(self, blobs, record=None, ui=ui_null()):
+  def __init__(self, blobs, record=None, ui=ui_null(), auto_clear=True):
     self.blobs = iter(blobs)
     self.blob = next(self.blobs)
     self.record = record
     self.ui = ui
+    self.auto_clear = auto_clear
     self.clipboard_open_time = 0
 
     self.WndProc = winmisc.WNDCLASSEX.WNDPROCTYPE(self.PyWndProcedure)
@@ -309,7 +309,8 @@ class ClipboardWindow(object):
     try:
       self.blob = next(self.blobs)
     except StopIteration:
-      empty_clipboard(self.ui, self.hWnd)
+      if self.auto_clear:
+        empty_clipboard(self.ui, self.hWnd)
       user32.DestroyWindow(self.hWnd)
       return False
     self.take_clipboard_ownership()
@@ -407,11 +408,11 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
       break
   empty_clipboard(ui)
 
-def sendViaClipboard(blobs, record = None, ui=ui_null()):
+def sendViaClipboard(blobs, record = None, ui=ui_null(), auto_clear=True):
   ui.status('')
   old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
   try:
-    clip_win = ClipboardWindow(blobs, record=record, ui=ui)
+    clip_win = ClipboardWindow(blobs, record=record, ui=ui, auto_clear=auto_clear)
     clip_win.main_loop()
   except StopIteration:
     ui.status('Nothing to copy')
@@ -422,12 +423,12 @@ def sendViaClipboard(blobs, record = None, ui=ui_null()):
     ui_tty.restore_cbreak(old)
 
 if __name__ == '__main__':
-  if len(sys.argv) == 2 and sys.argv[1] == "--wsl-proxy":
+  if len(sys.argv) == 2 and sys.argv[1] == "-":
     # This mode is used by WSL, as WSL cannot otherwise do advanced clipboard.
     # It will call this script using the native Windows Python interpreter, and
     # passes the blobs via stdin so they can't be seen in task manager.
-    (blobs, record) = json.loads(sys.stdin.read())
-    sendViaClipboard(blobs, record)
+    blob = sys.stdin.read()
+    sendViaClipboard([['STDIN', blob]], ui=ui_tty(), auto_clear=False)
   else:
     args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
     blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))
