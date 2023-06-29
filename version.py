@@ -58,9 +58,12 @@ def import_ask_install(module, package, msg, version_check=None, uninstall=None)
 def checkCrypto():
   def version_check(module):
     return module.version_info[0] >= 3
-  if not import_ask_install('Crypto', 'pycryptodome', 'ERROR: Python crypto library not found',
-      version_check=version_check, uninstall='pycrypto'):
-    sys.exit(1)
+  try:
+    import Cryptodome
+  except ImportError:
+    if not import_ask_install('Crypto', 'pycryptodome', 'ERROR: Python crypto library not found',
+        version_check=version_check, uninstall='pycrypto'):
+      sys.exit(1)
 
 def checkUrwid(required):
   if not import_ask_install('urwid', 'urwid', 'ERROR: Python urwid library not found'):

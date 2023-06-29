@@ -18,10 +18,18 @@
 
 import os, sys
 import fcntl, errno
-import Crypto.Hash.SHA
-import Crypto.Hash.SHA256
-import Crypto.Cipher.AES
-import Crypto.Util.strxor
+try:
+  # Getting a bit sick of packages that never heard of backwards compatibility...
+  import Cryptodome.Hash.SHA
+  import Cryptodome.Hash.SHA256
+  import Cryptodome.Cipher.AES
+  import Cryptodome.Util.strxor
+  Crypto = Cryptodome
+except ImportError:
+  import Crypto.Hash.SHA
+  import Crypto.Hash.SHA256
+  import Crypto.Cipher.AES
+  import Crypto.Util.strxor
 import base64
 import weakref
 import json
@@ -87,7 +95,6 @@ class _masterKey(object):
     Take a chunk of data and encrypt it using this key.
     Raises KeyExpired if this key has timed out.
     """
-    import Crypto.Util.strxor
     def pad(data, multiple):
       assert(multiple < 256)
       padding = multiple - ((len(data) + 1) % multiple)
