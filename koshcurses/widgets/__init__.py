@@ -23,6 +23,12 @@ from functools import reduce
 
 from .viCommandBar import viCommandBar
 
+try:
+    import Cryptodome.Random
+    Crypto = Cryptodome
+except:
+    import Crypto.Random
+
 class keymapwid(object):
   keymap = {}
   def keypress(self, size, key):
@@ -71,29 +77,28 @@ class passwordEdit(keymapwid, koshEdit):
     self._invalidate()
 
   def generate_password_builtin(self):
-    import Crypto.Random
     def rand_u8():
       import struct
       return struct.unpack('B', Crypto.Random.get_random_bytes(1))[0]
-    lower = [chr(x) for x in range(ord('a'), ord('z')+1)]
-    upper = [chr(x) for x in range(ord('A'), ord('Z')+1)]
-    numeric = [chr(x) for x in range(ord('0'), ord('9')+1)]
-    symbols = list(r'''~`!@#$%^&*()_-+={]}]|\:;"'<,>.?/''')
+    lower = list(range(ord('a'), ord('z')+1))
+    upper = list(range(ord('A'), ord('Z')+1))
+    numeric = list(range(ord('0'), ord('9')+1))
+    symbols = list(rb'''~`!@#$%^&*()_-+={]}]|\:;"'<,>.?/''')
     allowed = lower + upper + numeric #+ symbols
     length = 24 # FIXME: Customisable
-    passwd = Crypto.Random.get_random_bytes(length)
+    passwd = list(Crypto.Random.get_random_bytes(length))
     for i in range(len(passwd)):
       if passwd[i] not in allowed:
         c = None
         while c not in allowed:
-          c = Crypto.Random.get_random_bytes(1)
-        passwd = passwd[:i] + c + passwd[i+1:]
+          c = rand_u8()
+        passwd = passwd[:i] + [c] + passwd[i+1:]
     # Ensure there is at least one character of each class to satisfy most
     # password constraints:
     def replace_one_character_with_set(chars):
       i = rand_u8() % length
       c = chars[rand_u8() % len(chars)]
-      return passwd[:i] + c + passwd[i+1:]
+      return passwd[:i] + [c] + passwd[i+1:]
     while True:
       passwd = replace_one_character_with_set(lower)
       passwd = replace_one_character_with_set(upper)
@@ -106,7 +111,7 @@ class passwordEdit(keymapwid, koshEdit):
         if set(passwd).intersection(symbols) == set(): continue
       if rand_u8() % 2 == 0: continue
       break
-    return passwd
+    return bytes(passwd).decode('ascii')
 
   def generate_password(self, size, key):
     import subprocess
