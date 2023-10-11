@@ -434,8 +434,13 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui, auto_advance=False)
 
   def runscript(self, size, key):
-    label = self._w.get_focus()[0].get_label()
+    if self.editing:
+      # Added to avoid exception if accidentally type S on Save/Cancel buttons
+      # while editing. Currently can't run a script in edit mode anyway, so
+      # just disallow.
+      return
     try:
+      label = self._w.get_focus()[0].get_label()
       if label.startswith('HACK_HTTP-SCRIPT_'):
         self.do_play_http_script()
       elif label.startswith('HACK_LOCALHOST'):
