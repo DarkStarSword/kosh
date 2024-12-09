@@ -93,7 +93,9 @@ def checkWSLClipboard():
     print('WSL detected, but native Python unavailable - clipboard implementation will be limited. Install native python and add to path to enable advanced clipboard support.\nPress enter to continue...')
     input()
   if native_python_is_stub is True:
-    print('WSL detected, but native Python not installed - clipboard implementation will be limited')
+    print('WSL detected, but native Python not installed - clipboard implementation will be limited.')
+    print('If Python is already installed via the Windows store and you are still seeing this message,')
+    print('open Settings ->...-> "App Execution Aliases" and try cycling the python.exe alias off and on.')
     answer = None
     while answer not in ('y', 'n'):
       answer = input('Open Windows Store to install native Python for advanced clipboard integration? (y/n) ').lower()
