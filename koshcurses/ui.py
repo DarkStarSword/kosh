@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab:sts=2
 
-# Copyright (C) 2009-2020 Ian Munsie
+# Copyright (C) 2009-2025 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ import time
 import sys
 from functools import reduce
 import version
+import urllib
 
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -229,12 +230,29 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
     self._update()
 
+  def try_totp(self, field):
+    try:
+      import pyotp
+      # TODO: Newer pyotp has a built in URL parser that would be more
+      # convenient to use, but want to support older versions
+      result = urllib.parse.urlparse(field)
+      if result.scheme != 'otpauth' or result.netloc != 'totp':
+        return field
+      query = urllib.parse.parse_qs(result.query)
+      algorithm, = query.get('algorithm', ['SHA1'])
+      digits, = map(int, query.get('digits', ['6']))
+      secret, = query['secret']
+      totp = pyotp.TOTP(secret, digits=digits, digest=algorithm)
+      return totp.now()
+    except:
+      return field
+
   def reveal(self, entry):
     if self.editing:
       return
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
-      [ urwid.Text(x+": " + entry[x]) for x in entry ] + \
+      [ urwid.Text(x+": " + self.try_totp(entry[x])) for x in entry ] + \
       [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
     self._update()
 
@@ -245,7 +263,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     label = button.get_label()
     index = self.content.index(button)
     self.content = self.content[:index] + \
-        [ urwid.Text(label+": " + self.entry[label]) ] + \
+        [ urwid.Text(label+": " + self.try_totp(self.entry[label])) ] + \
         self.content[index+1:]
     self._update()
 
@@ -399,39 +417,41 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def yank(self, size, key):
     label = self._w.get_focus()[0].get_label()
+    blob = self.try_totp(self.entry[label])
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
-      winclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      winclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
     elif version.is_wsl():
       import wslclipboard
-      wslclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      wslclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
     elif sys.platform == 'darwin':
       import macclipboard
-      macclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      macclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
     elif version.HAS_TERMUX_API:
       import termuxclipboard
-      termuxclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      termuxclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
     else:
       import xclipboard
-      xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      xclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
 
   def capital_yank(self, size, key):
     label = self._w.get_focus()[0].get_label()
+    blob = self.try_totp(self.entry[label])
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
-      winclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      winclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
     elif version.is_wsl():
       import wslclipboard
-      wslclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      wslclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
     elif sys.platform == 'darwin':
       import macclipboard
-      macclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      macclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
     elif version.HAS_TERMUX_API:
       import termuxclipboard
-      termuxclipboard.sendViaClipboardSimple([(label, self.entry[label])], self.entry.name, ui=self.ui)
+      termuxclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
     else:
       import xclipboard
-      xclipboard.sendViaClipboard([(label, self.entry[label])], self.entry.name, ui=self.ui, auto_advance=False)
+      xclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui, auto_advance=False)
 
   def runscript(self, size, key):
     if self.editing:

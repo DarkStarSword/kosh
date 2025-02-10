@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
-# Copyright (C) 2009-2021 Ian Munsie
+# Copyright (C) 2009-2025 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -72,6 +72,9 @@ def checkUrwid(required):
   if required.split('.') > urwid.__version__.split('.'):
     print('ERROR: Python urwid library TOO OLD - Version %s or later is required' % required)
     sys.exit(1)
+
+def checkPyotp():
+  import_ask_install('pyotp', 'pyotp', 'ERROR: Python OTP library not found, 2FA TOTP support will be unavailable')
 
 def checkXClipboard():
   import_ask_install('Xlib', 'xlib', 'WARNING: Python-Xlib not installed, clipboard integration will be unavailable')
