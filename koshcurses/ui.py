@@ -492,9 +492,16 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.okCallback(self.entry)
 
   def discard(self, *args):
-    self.showNone()
-    self.editing = False
-    self.cancel()
+    message = 'Really discard changes?'
+    dlg = dialog.YesNoDialog(message=message)
+    self.ui.mainloop.stop()
+    response = dlg.showModal()
+    self.ui.mainloop.start()
+    if response:
+      cancelled_entry = self.entry.name
+      self.editing = False
+      self.showNone()
+      self.cancel(cancelled_entry)
 
   def keypress(self, size, key):
     self.ui.touch()
@@ -658,9 +665,12 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     if self.pwList:
       self.pwList.refresh(entry.name)
 
-  def cancel(self):
+  def cancel(self, cancelled_entry):
     # Necessary to get focus back
     self.container.set_focus(0)
+    if self.pwList and cancelled_entry:
+      #self.pwList.refresh(self.pwList.showing.name)
+      self.pwList.refresh(cancelled_entry)
 
   def status(self, status, append=False):
     return self.vi.update_status(status, append)
