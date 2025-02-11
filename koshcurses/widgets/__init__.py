@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
-# Copyright (C) 2009-2021 Ian Munsie
+# Copyright (C) 2009-2025 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ import urwid
 from . import utf8
 import types
 from functools import reduce
+import datetime
 
 from .viCommandBar import viCommandBar
 
@@ -164,3 +165,18 @@ class LineColumns(urwid.WidgetWrap):
   def set_widget(self, idx, widget):
     self.widget_list[idx] = widget
     self.update()
+
+class RevealedTOTPWidget(urwid.Button):
+  def __init__(self, entry, totp, *a, **kw):
+    self.entry = entry
+    self.totp = totp
+    label = self.get_label()
+    urwid.Button.__init__(self, label, *a, **kw)
+
+  def get_label(self):
+    now = datetime.datetime.now()
+    time_remaining = self.totp.interval - now.timestamp() % self.totp.interval
+    return "%s: %s (%i:%.2i)" % (self.entry, self.totp.at(now), time_remaining // 60, time_remaining % 60)
+
+  def tick(self):
+    self.set_label(self.get_label())

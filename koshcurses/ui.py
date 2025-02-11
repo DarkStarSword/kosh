@@ -94,7 +94,10 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     showing = self.db[button.get_label()]
     if self.showing in showing.history():
       # Either pressed enter, or clicked a second time on same entry
-      self.pwForm.reveal(self.showing)
+      if not self.pwForm.all_revealed:
+        self.pwForm.reveal_all(self.showing)
+      else:
+        self.pwForm.hide_all(self.showing)
     else:
       # May happen due to mouse click
       self.showing = showing
@@ -209,6 +212,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.lb = None
     self.ui = ui
     self.editing = False
+    self.all_revealed = False
 
   def showNone(self):
     if self.editing:
@@ -226,7 +230,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       return self.showNone()
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
-      [ urwid.Button(x, self.reveal_field) for x in entry ] + \
+      [ self.make_unrevealed_widget(x) for x in entry ] + \
       [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
     self._update()
 
@@ -237,35 +241,81 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       # convenient to use, but want to support older versions
       result = urllib.parse.urlparse(field)
       if result.scheme != 'otpauth' or result.netloc != 'totp':
-        return field
+        return None
       query = urllib.parse.parse_qs(result.query)
       algorithm, = query.get('algorithm', ['SHA1'])
       digits, = map(int, query.get('digits', ['6']))
+      period, = map(int, query.get('period', ['30']))
       secret, = query['secret']
-      totp = pyotp.TOTP(secret, digits=digits, digest=algorithm)
-      return totp.now()
+      totp = pyotp.TOTP(secret, digits=digits, digest=algorithm, interval=period)
+      return totp
     except:
-      return field
+      return None
 
-  def reveal(self, entry):
+  def try_totp_str(self, field):
+    totp = self.try_totp(field)
+    if totp is not None:
+      return totp.now()
+    return field
+
+  def make_unrevealed_widget(self, entry):
+    widget = urwid.Button(entry, self.reveal_field)
+    widget.kosh_entry = entry
+    return widget
+
+  def make_revealed_widget(self, entry):
+    val = self.entry[entry]
+    totp = self.try_totp(val)
+    if totp is not None:
+      widget = widgets.RevealedTOTPWidget(entry, totp, self.hide_field)
+    else:
+      widget = urwid.Button(entry+": " + val, self.hide_field)
+    widget.kosh_entry = entry
+    return widget
+
+  def reveal_all(self, entry):
     if self.editing:
       return
     self.entry = entry
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
-      [ urwid.Text(x+": " + self.try_totp(entry[x])) for x in entry ] + \
+      [ self.make_revealed_widget(x) for x in entry ] + \
       [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
     self._update()
+    self.all_revealed = True
+
+  def hide_all(self, entry):
+    if self.editing:
+      return
+    self.entry = entry
+    self.content = [urwid.Text('Name: ' + self.entry.name)] + \
+      [ self.make_unrevealed_widget(x) for x in entry ] + \
+      [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
+    self._update()
+    self.all_revealed = False
 
   def reveal_field(self, button):
     self.ui.touch()
     if self.editing:
       return
-    label = button.get_label()
+    tag = button.kosh_entry
     index = self.content.index(button)
     self.content = self.content[:index] + \
-        [ urwid.Text(label+": " + self.try_totp(self.entry[label])) ] + \
+        [ self.make_revealed_widget(tag) ] + \
         self.content[index+1:]
     self._update()
+    self._w.set_focus(index)
+
+  def hide_field(self, button):
+    self.ui.touch()
+    if self.editing:
+      return
+    tag = button.kosh_entry
+    index = self.content.index(button)
+    self.content = self.content[:index] + \
+        [ self.make_unrevealed_widget(tag) ] + \
+        self.content[index+1:]
+    self._update()
+    self._w.set_focus(index)
 
   def edit(self, entry, ok, cancel):
     self.editing = True
@@ -346,7 +396,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       newpass = self.entry['Password']
       # FIXME: Should walk list to find this
       oldpass = self.entry['OldPassword']
-      value = self.entry[self._w.get_focus()[0].get_label()]
+      value = self.entry[self._w.get_focus()[0].kosh_entry]
       return fn(self, *args, username=username, newpass=newpass, oldpass=oldpass, value=value, **kwargs)
     return wrap
 
@@ -416,8 +466,8 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     return ret
 
   def yank(self, size, key):
-    label = self._w.get_focus()[0].get_label()
-    blob = self.try_totp(self.entry[label])
+    label = self._w.get_focus()[0].kosh_entry
+    blob = self.try_totp_str(self.entry[label])
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
@@ -435,8 +485,8 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       xclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
 
   def capital_yank(self, size, key):
-    label = self._w.get_focus()[0].get_label()
-    blob = self.try_totp(self.entry[label])
+    label = self._w.get_focus()[0].kosh_entry
+    blob = self.try_totp_str(self.entry[label])
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
@@ -460,7 +510,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       # just disallow.
       return
     try:
-      label = self._w.get_focus()[0].get_label()
+      label = self._w.get_focus()[0].kosh_entry
       if label.startswith('HACK_HTTP-SCRIPT_'):
         self.do_play_http_script()
       elif label.startswith('HACK_LOCALHOST'):
@@ -479,6 +529,12 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
   def _update(self):
     self.lb = urwid.ListBox(self.content)
     self._set_w(self.lb)
+
+  def tick(self):
+    if self.content:
+      for widget in self.content:
+        if isinstance(widget, widgets.RevealedTOTPWidget):
+          widget.tick()
 
 class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -535,6 +591,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
 
   def tick(self, mainloop=None, user_data=None):
     self.update_countdown_display()
+    self.pwEntry.tick()
     self.alarm = self.mainloop.set_alarm_at(time.time() + 1, self.tick)
 
   def new(self, size, key):
