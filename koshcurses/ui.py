@@ -222,6 +222,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.fields = None
     self.content = None
     self.lb = None
+    self.all_revealed = False
 
   def show(self, entry):
     if self.editing:
@@ -232,6 +233,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.content = [urwid.Text('Name: ' + self.entry.name)] + \
       [ self.make_unrevealed_widget(x) for x in entry ] + \
       [ urwid.Divider(), urwid.Text('Timestamp: ' + time.asctime(time.localtime(entry.timestamp()))) ]
+    self.all_revealed = False
     self._update()
 
   def try_totp(self, field):
@@ -326,15 +328,40 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.fields = [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ]
     self.newfield = widgets.koshEdit('Add new field: ')
     self.record_http_script = widgets.koshEdit('Record HTTP password change script: ')
+    self.edit_clip_order = urwid.CheckBox('Edit clipboard order', 'CopyFieldOrder' in entry.meta)
+    urwid.connect_signal(self.edit_clip_order, 'postchange', self.on_edit_clip_order_change)
     self._edit()
     self._update()
   def _edit(self):
-    self.content = [self.fname] + self.fields + [urwid.Divider(), self.newfield,
-        self.record_http_script] + [ urwid.GridFlow(
+    rows = self.fields
+    if self.edit_clip_order.get_state():
+      # Since a number of functions alter self.fields to e.g. add/modify/remove
+      # fields on the fly, generate the second column for clip order live
+      # whenever this is called, creating and caching the clip order widgets in a
+      # custom attribute on the password edit widgets as needed
+      rows = [ urwid.Columns([
+        ('weight', 1.0, field),
+        (3, self.get_clip_order_widget(field))
+      ]) for field in self.fields]
+
+    self.content = [self.fname] + rows + [urwid.Divider(), self.newfield,
+        self.record_http_script, self.edit_clip_order] + [ urwid.GridFlow(
           [urwid.Button('Save', self.commit),
             urwid.Button('Cancel', self.discard) ],
           10, 3, 1, 'center')
       ]
+
+  def get_clip_order_widget(self, field):
+    '''
+    Gets the clip order widget associated with a passwordEdit widget
+    '''
+    if not hasattr(field, 'kosh_cliporder_widget'):
+      val = ''
+      name = field.caption[:-2] # FIXME: Store in custom attribute
+      if 'CopyFieldOrder' in self.entry.meta and name in self.entry.meta['CopyFieldOrder']:
+        val = self.entry.meta['CopyFieldOrder'].index(name)
+      field.kosh_cliporder_widget = urwid.IntEdit('|', val)
+    return field.kosh_cliporder_widget
 
   def add_new_field(self):
     field = self.newfield.get_edit_text().strip()
@@ -370,10 +397,14 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     for f in self.fields:
       # It would be nice to just update self.entry, but we need to avoid clobbering edits...
       # If we already have a field with this name, it counts as an edit - replace the old field
-      name = f.caption[:-2]
+      name = f.caption[:-2] # FIXME: Store in custom attribute
       if name == field:
         self.fields.remove(f)
     self.fields += [ widgets.passwordEdit(field+': ', script, revealable=True) ]
+    self._edit()
+    self._update()
+
+  def on_edit_clip_order_change(self, checkbox, new_state):
     self._edit()
     self._update()
 
@@ -434,14 +465,29 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     if not self.validate():
       # FIXME: Notify
       return
+
+    if self.edit_clip_order.get_state():
+      copy_field_order = []
+    elif 'CopyFieldOrder' in self.entry.meta:
+      copy_field_order = None
+      del self.entry.meta['CopyFieldOrder']
+
     self.entry.name = self.fname.get_edit_text()
     for field in self.fields:
-      name = field.caption[:-2]
+      name = field.caption[:-2] # FIXME: Store in custom attribute
       txt = field.get_edit_text()
       if txt != '':
         self.entry[name] = txt
+        if copy_field_order is not None:
+          clip_order = self.get_clip_order_widget(field).get_edit_text()
+          if clip_order != '':
+            copy_field_order.append((int(clip_order), name))
       elif name in self.entry:
         del self.entry[name]
+
+    if copy_field_order is not None:
+      self.entry.meta['CopyFieldOrder'] = list(zip(*sorted(copy_field_order)))[1]
+
     self.editing = False
     self.okCallback(self.entry)
 
