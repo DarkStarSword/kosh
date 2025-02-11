@@ -23,7 +23,7 @@ import time
 import sys
 from functools import reduce
 import version
-import urllib
+import otpauth
 
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -138,38 +138,40 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     t.start()
 
   def yank(self, size, key):
+    blobs = otpauth.totp_iter(self.showing.clipIter())
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
-      winclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      winclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
     elif version.is_wsl():
       import wslclipboard
-      wslclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      wslclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
     elif sys.platform == 'darwin':
       import macclipboard
-      macclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      macclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
     elif version.HAS_TERMUX_API:
       import termuxclipboard
-      termuxclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      termuxclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
     else:
       import xclipboard
-      xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      xclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
 
   def capital_yank(self, size, key):
+    blobs = otpauth.totp_iter(self.showing.clipIter())
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
-      winclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      winclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
     elif version.is_wsl():
       import wslclipboard
-      wslclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      wslclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
     elif sys.platform == 'darwin':
       import macclipboard
-      macclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      macclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
     elif version.HAS_TERMUX_API:
       import termuxclipboard
-      termuxclipboard.sendViaClipboardSimple(self.showing.clipIter(), self.showing.name, ui=self.ui)
+      termuxclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
     else:
       import xclipboard
-      xclipboard.sendViaClipboard(self.showing.clipIter(), self.showing.name, ui=self.ui, auto_advance=False)
+      xclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui, auto_advance=False)
 
   def edit(self, size, key):
     self.ui.container.set_focus(self.pwForm)
@@ -236,30 +238,6 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.all_revealed = False
     self._update()
 
-  def try_totp(self, field):
-    try:
-      import pyotp
-      # TODO: Newer pyotp has a built in URL parser that would be more
-      # convenient to use, but want to support older versions
-      result = urllib.parse.urlparse(field)
-      if result.scheme != 'otpauth' or result.netloc != 'totp':
-        return None
-      query = urllib.parse.parse_qs(result.query)
-      algorithm, = query.get('algorithm', ['SHA1'])
-      digits, = map(int, query.get('digits', ['6']))
-      period, = map(int, query.get('period', ['30']))
-      secret, = query['secret']
-      totp = pyotp.TOTP(secret, digits=digits, digest=algorithm, interval=period)
-      return totp
-    except:
-      return None
-
-  def try_totp_str(self, field):
-    totp = self.try_totp(field)
-    if totp is not None:
-      return totp.now()
-    return field
-
   def make_unrevealed_widget(self, entry):
     widget = urwid.Button(entry, self.reveal_field)
     widget.kosh_entry = entry
@@ -267,7 +245,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def make_revealed_widget(self, entry):
     val = self.entry[entry]
-    totp = self.try_totp(val)
+    totp = otpauth.try_totp(val)
     if totp is not None:
       widget = widgets.RevealedTOTPWidget(entry, totp, self.hide_field)
     else:
@@ -520,7 +498,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def yank(self, size, key):
     label = self._w.get_focus()[0].kosh_entry
-    blob = self.try_totp_str(self.entry[label])
+    blob = otpauth.try_totp_str(self.entry[label])
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
@@ -539,7 +517,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
 
   def capital_yank(self, size, key):
     label = self._w.get_focus()[0].kosh_entry
-    blob = self.try_totp_str(self.entry[label])
+    blob = otpauth.try_totp_str(self.entry[label])
     if sys.platform in ('win32', 'cygwin'):
       import winclipboard
       winclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
