@@ -18,7 +18,7 @@
 
 import urwid
 import weakref
-from . import widgets
+from . import widgets, dialog
 import time
 import sys
 from functools import reduce
@@ -668,4 +668,22 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   def showModal(self, parent=None):
     self.mainloop = urwid.MainLoop(self)
     self.tick()
-    self.mainloop.run()
+    while True:
+      try:
+        self.mainloop.run()
+        break
+      except KeyboardInterrupt:
+        if not self.pwEntry.editing:
+          raise
+        message = 'Currently editing a password record\nReally exit without saving?'
+        dlg = dialog.YesNoDialog(message=message)
+        while True:
+          try:
+            response = dlg.showModal()
+            break
+          except KeyboardInterrupt:
+            # In case of accidental double ctrl+c ask again
+            continue
+        if response:
+          raise
+        continue

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
-# Copyright (C) 2009-2021 Ian Munsie
+# Copyright (C) 2009-2025 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -45,6 +45,35 @@ class inputDialog(urwid.WidgetWrap):
         raise urwid.ExitMainLoop()
     urwid.MainLoop(overlay, unhandled_input=exit_on_input).run()
     return self.edit.get_edit_text()
+
+class YesNoDialog(urwid.WidgetWrap):
+  def __init__(self, message=None, width=0):
+    columncontent = [
+      urwid.Button('No', self.on_press, False),
+      urwid.Button('Yes', self.on_press, True),
+    ]
+    listboxcontent = [
+      urwid.Text(message, align='center'),
+      urwid.Divider('-'),
+      urwid.Columns(columncontent, 5),
+    ]
+    listbox = urwid.ListBox(listboxcontent)
+    self.width = reduce(lambda m,s: max(len(s),m), message.split('\n'), 0) + 6
+    self.height = message.count('\n') + len(listboxcontent) + 2
+    if self.width < width:
+      self.width = width
+    urwid.WidgetWrap.__init__(self, urwid.LineBox(listbox))
+
+  def on_press(self, widget, user_data):
+    self.response = user_data
+    raise urwid.ExitMainLoop()
+
+  def showModal(self, parent=None):
+    if parent is None:
+      parent = urwid.SolidFill()
+    overlay = urwid.Overlay(self, parent, 'center', self.width, 'middle', self.height)
+    urwid.MainLoop(overlay).run()
+    return self.response
 
 if __name__=='__main__':
   d = inputDialog(message='Enter master password:', width=30)
