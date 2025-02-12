@@ -12,18 +12,30 @@ import sys
 import os
 import select
 import subprocess
+import time
+
+# If winclipboard.py takes longer than this to respond, warn that Windows
+# Defender might be slowing things down. Typical times are about 0.15 seconds:
+excessive_time = 0.2
 
 def copy_text_simple(blob):
   text = str(blob).encode('utf8') # blob may be utf8
   subprocess.run("clip.exe", input=text)
 
-def copy_text_wsl_proxy(blob):
+def copy_text_wsl_proxy(blob, ui):
   #native_python = subprocess.run("python.exe winclipboard.py -".split(), input=blob)
   winpython = subprocess.Popen("python.exe winclipboard.py -".split(),
       cwd=os.path.dirname(os.path.realpath(sys.argv[0])),
       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
   winpython.stdin.write(blob.encode('utf8'))
   winpython.stdin.close()
+  start_time = time.time()
+  winpython.stdout.read(1)
+  delta_time = time.time() - start_time
+  if delta_time > excessive_time:
+    ui.status('WSL clipboard proxy took %.2f seconds\n' \
+    'Please ensure WSL paths are added to Windows Defender exclusions\n' \
+    'e.g. for WSL2 add \\\\wsl.localhost\\Ubuntu\\' % delta_time, append=True)
   return winpython
 
 def empty_clipboard(ui):
@@ -84,7 +96,7 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
 def sendViaClipboard(blobs, record = None, ui=ui_null()):
   ui.status('')
   for (field, blob) in blobs:
-    child = copy_text_wsl_proxy(blob)
+    child = copy_text_wsl_proxy(blob, ui)
     try:
       ui.status("Ready to send %s for '%s'... (enter skips, escape cancels)"%(field.upper(),record), append=True)
       if not tty_ui_loop(ui, [child.stdout]):

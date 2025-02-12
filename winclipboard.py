@@ -273,6 +273,7 @@ class ClipboardWindow(object):
   def take_clipboard_ownership(self):
     self.ui.status("Ready to send %s for '%s' via clipboard... (enter skips, escape cancels)" %
         (self.blob[0].upper(), self.record), append=True)
+    sys.stdout.flush() # Ensure that wslclipboard.py knows we are ready and can time how long it took to warn if Defender has slowed things down excessively
     defer_clipboard_copy(self.hWnd)
     self.clipboard_open_time = time.time()
     self.pump_tty_ui_main_loop()
