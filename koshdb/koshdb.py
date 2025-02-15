@@ -293,8 +293,14 @@ class passEntry(dict):
 
     def sortedGen(self, order):
       fields = list(self.keys())
+      found = False
       for field in order:
         if field in fields:
+          yield (field, self[field])
+          found = True
+      # If no fields are in CopyFieldOrder, use DisplayOrder instead:
+      if not found:
+        for field in iter(self):
           yield (field, self[field])
 
     return sortedGen(self, order)
