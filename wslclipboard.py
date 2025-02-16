@@ -33,9 +33,10 @@ def copy_text_wsl_proxy(blob, ui):
   winpython.stdout.read(1)
   delta_time = time.time() - start_time
   if delta_time > excessive_time:
+    wsl_distro = os.environ.get('WSL_DISTRO_NAME', 'Ubuntu')
     ui.status('WSL clipboard proxy took %.2f seconds\n' \
     'Please ensure WSL paths are added to Windows Defender exclusions\n' \
-    'e.g. for WSL2 add \\\\wsl.localhost\\Ubuntu\\' % delta_time, append=True)
+    'e.g. for WSL2 add \\\\wsl.localhost\\%s\\' % (delta_time, wsl_distro), append=True)
   return winpython
 
 def empty_clipboard(ui):
