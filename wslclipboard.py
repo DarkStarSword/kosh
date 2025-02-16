@@ -16,7 +16,7 @@ import time
 
 # If winclipboard.py takes longer than this to respond, warn that Windows
 # Defender might be slowing things down. Typical times are about 0.15 seconds:
-excessive_time = 0.3
+excessive_time = 0.4
 
 def copy_text_simple(blob):
   text = str(blob).encode('utf8') # blob may be utf8
