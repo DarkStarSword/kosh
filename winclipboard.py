@@ -6,6 +6,8 @@ from ui import ui_tty, ui_null
 import sys
 import select
 import time
+import threading
+import queue
 
 # How many miliseconds to wait for the receiving application to retrieve the
 # clipboard contents before taking ownership again for the next value. This is
@@ -121,6 +123,7 @@ class winmisc(object):
   WM_RENDERALLFORMATS = 0x0306
   WM_DESTROYCLIPBOARD = 0x0307
   WM_CLIPBOARDUPDATE = 0x031D
+  WM_USER = 0x0400
 
   WHITE_BRUSH = 0
 
@@ -213,15 +216,20 @@ def empty_clipboard(ui, hWnd=None):
   user32.EmptyClipboard()
   user32.CloseClipboard()
   ui.status('Clipboard Cleared', append=True)
+  sys.stdout.flush() # Ensure message pushed to wslclipboard
 
 class ClipboardWindow(object):
   CLASS_NAME = b'kosh\0'
-  def __init__(self, blobs, record=None, ui=ui_null(), auto_clear=True):
+  def __init__(self, blobs, record=None, ui=ui_null(), auto_clear=True, proxy_queue=None):
     self.blobs = iter(blobs)
     self.blob = next(self.blobs)
-    self.record = record
+    try:
+      self.record = self.blob[2]
+    except:
+      self.record = record
     self.ui = ui
     self.auto_clear = auto_clear
+    self.proxy_queue = proxy_queue
     self.clipboard_open_time = 0
 
     self.WndProc = winmisc.WNDCLASSEX.WNDPROCTYPE(self.PyWndProcedure)
@@ -253,6 +261,7 @@ class ClipboardWindow(object):
 
     if not self.hWnd:
       print('Failed to create window: %d' % ctypes.get_last_error())
+      sys.stdout.flush() # Ensure message pushed to wslclipboard
       return
     #print('ShowWindow', user32.ShowWindow(self.hWnd, winmisc.SW_SHOW))
     #print('UpdateWindow', user32.UpdateWindow(self.hWnd))
@@ -273,7 +282,7 @@ class ClipboardWindow(object):
   def take_clipboard_ownership(self):
     self.ui.status("Ready to send %s for '%s' via clipboard... (enter skips, escape cancels)" %
         (self.blob[0].upper(), self.record), append=True)
-    sys.stdout.flush() # Ensure that wslclipboard.py knows we are ready and can time how long it took to warn if Defender has slowed things down excessively
+    sys.stdout.flush() # Ensure message pushed to wslclipboard
     defer_clipboard_copy(self.hWnd)
     self.clipboard_open_time = time.time()
     self.pump_tty_ui_main_loop()
@@ -302,6 +311,7 @@ class ClipboardWindow(object):
           next(self)
         elif char == '\x1b':
           empty_clipboard(self.ui, self.hWnd)
+          assert(self.proxy_queue is None)
           user32.DestroyWindow(self.hWnd)
       elif fd in ui_fds:
         self.ui.mainloop.event_loop._loop()
@@ -309,9 +319,14 @@ class ClipboardWindow(object):
   def __next__(self):
     try:
       self.blob = next(self.blobs)
+      try:
+        self.record = self.blob[2]
+      except IndexError:
+        self.record = None
     except StopIteration:
       if self.auto_clear:
         empty_clipboard(self.ui, self.hWnd)
+      assert(self.proxy_queue is None)
       user32.DestroyWindow(self.hWnd)
       return False
     self.take_clipboard_ownership()
@@ -324,6 +339,7 @@ class ClipboardWindow(object):
       delta = time.time() - self.clipboard_open_time
       if delta < ignore_clipboard_requests_within:
         self.ui.status('Ignoring clipboard request within %.1fms of taking clipboard' % (delta*1000.0), append=True)
+        sys.stdout.flush() # Ensure message pushed to wslclipboard
       else:
         copy_text_deferred(self.blob[1])
         user32.SetTimer(hWnd, 0, clipboard_hold_ms, None)
@@ -334,15 +350,34 @@ class ClipboardWindow(object):
       elif wParam == 1:
         # FIXME: This is a hack to pump urwid main loop and process stdin
         self.pump_tty_ui_main_loop()
+    elif Msg == winmisc.WM_USER:
+      if wParam == 0:
+        next(self)
+      elif wParam == 1:
+        empty_clipboard(self.ui, self.hWnd)
+      elif wParam == 2:
+        user32.DestroyWindow(self.hWnd)
     elif Msg == winmisc.WM_DESTROYCLIPBOARD:
       # Seems useless since it only notifies me if I am the owner?
       if user32.GetClipboardOwner() != hWnd:
         self.ui.status('Lost control of clipboard (notified via WM_DESTROYCLIPBOARD)')
-        user32.DestroyWindow(hWnd)
+        sys.stdout.flush() # Ensure message pushed to wslclipboard
+        if self.proxy_queue is not None:
+          drain_queue(self.proxy_queue)
+          self.proxy_queue.put(('\x04', None, None)) # Use EOT flow to signal wslclipboard we are finished
+          next(self)
+        else:
+          user32.DestroyWindow(hWnd)
     elif Msg == winmisc.WM_CLIPBOARDUPDATE:
       if user32.GetClipboardOwner() != hWnd:
         self.ui.status('Lost control of clipboard')
-        user32.DestroyWindow(hWnd)
+        sys.stdout.flush() # Ensure message pushed to wslclipboard
+        if self.proxy_queue is not None:
+          drain_queue(self.proxy_queue)
+          self.proxy_queue.put(('\x04', None, None)) # Use EOT flow to signal wslclipboard we are finished
+          next(self)
+        else:
+          user32.DestroyWindow(hWnd)
     else:
       return user32.DefWindowProcW(hWnd, Msg, wParam, lParam)
     return 0
@@ -402,34 +437,102 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
     finally:
       ui_tty.restore_cbreak(old)
   ui.status('')
+  sys.stdout.flush() # Ensure message pushed to wslclipboard
   for (field, blob) in blobs:
     copy_text_simple(blob)
     ui.status("Copied %s for '%s' to clipboard, press enter to continue..."%(field.upper(),record), append=True)
+    sys.stdout.flush() # Ensure message pushed to wslclipboard
     if not tty_ui_loop(ui):
       break
   empty_clipboard(ui)
 
-def sendViaClipboard(blobs, record = None, ui=ui_null(), auto_clear=True):
+clip_win = None
+def sendViaClipboard(blobs, record = None, ui=ui_null(), auto_clear=True, proxy_queue=None):
+  global clip_win
   ui.status('')
+  sys.stdout.flush() # Ensure message pushed to wslclipboard
   old = ui_tty.set_cbreak() # Set unbuffered IO (if not already)
   try:
-    clip_win = ClipboardWindow(blobs, record=record, ui=ui, auto_clear=auto_clear)
+    clip_win = ClipboardWindow(blobs, record=record, ui=ui, auto_clear=auto_clear, proxy_queue=proxy_queue)
     clip_win.main_loop()
   except StopIteration:
     ui.status('Nothing to copy')
+    sys.stdout.flush() # Ensure message pushed to wslclipboard
     # Ensure user won't paste previous clipboard contents into a login box if
     # they don't notice the message:
     empty_clipboard(ui)
   finally:
     ui_tty.restore_cbreak(old)
 
+def drain_queue(blob_queue):
+  while not blob_queue.empty():
+    try:
+      blob_queue.get_nowait()
+    except queue.Empty:
+      pass
+
+def stdin_thread_main(blob_queue):
+  while True:
+    blob = sys.stdin.readline().rstrip('\n\r')
+    try:
+      blob, record = blob.split('\x1e') # Record separator
+    except:
+      record = None
+    try:
+      blob, field = blob.split('\x1f') # Field separator
+    except:
+      field = 'STDIN'
+    if blob == '\x0f': # Skip
+      assert(clip_win) # FIXME: Ensure clip_win has been created by now
+      user32.PostMessageA(clip_win.hWnd, winmisc.WM_USER, 0, 0) # Next
+    elif blob == '\x1b': # Cancel
+      drain_queue(blob_queue)
+      assert(clip_win) # FIXME: Ensure clip_win has been created by now
+      user32.PostMessageA(clip_win.hWnd, winmisc.WM_USER, 1, 0) # Clear clipboard
+      blob_queue.put(('\x04', None, None)) # Use EOT flow to signal wslclipboard we are finished
+      user32.PostMessageA(clip_win.hWnd, winmisc.WM_USER, 0, 0) # Next
+    elif blob:
+      blob_queue.put((blob, field, record))
+    else:
+      blob_queue.shutdown()
+      assert(clip_win) # FIXME: Ensure clip_win has been created by now
+      user32.PostMessageA(clip_win.hWnd, winmisc.WM_USER, 1, 0) # Clear
+      user32.PostMessageA(clip_win.hWnd, winmisc.WM_USER, 2, 0) # Shutdown
+      return
+
+def stdin_iter(blob_queue):
+  while True:
+    try:
+      blob, field, record = blob_queue.get()
+      if blob == '\x18': # Clear clipboard
+        user32.SendMessageA(clip_win.hWnd, winmisc.WM_USER, 1, 0) # Clear clipboard
+        continue
+      if blob == '\x04': # EOT
+        #user32.SendMessageA(clip_win.hWnd, winmisc.WM_USER, 1, 0) # Clear clipboard
+        # Notify wslclipboard we are finished this record:
+        sys.stdout.write('\x04\n')
+        sys.stdout.flush()
+        continue
+      yield [field, blob, record]
+    except queue.ShutDown:
+      raise StopIteration()
+
 if __name__ == '__main__':
   if len(sys.argv) == 2 and sys.argv[1] == "-":
     # This mode is used by WSL, as WSL cannot otherwise do advanced clipboard.
     # It will call this script using the native Windows Python interpreter, and
     # passes the blobs via stdin so they can't be seen in task manager.
-    blob = sys.stdin.read()
-    sendViaClipboard([['STDIN', blob]], ui=ui_tty(), auto_clear=False)
+    # Send a byte to wslclipboard so it can work out how long it took to start
+    # us and warn if it took an exceptionally long time which may signify
+    # Windows Defender is slowing down execution out of \\wsl.localhost:
+    sys.stdout.write('.')
+    sys.stdout.flush()
+    blob_queue = queue.Queue()
+    thread = threading.Thread(target=stdin_thread_main, args=[blob_queue])
+    thread.daemon = True
+    thread.start()
+    #os.set_blocking(sys.stdout.fileno(), False)
+    sendViaClipboard(stdin_iter(blob_queue), ui=ui_tty(), auto_clear=False, proxy_queue=blob_queue)
   else:
     args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
     blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))

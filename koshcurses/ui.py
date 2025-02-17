@@ -639,6 +639,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
         import winclipboard as clipboard
       elif version.is_wsl():
         import wslclipboard as clipboard
+        clipboard.init(self)
       elif sys.platform == 'darwin':
         import macclipboard as clipboard
       elif version.HAS_TERMUX_API:
