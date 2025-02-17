@@ -138,40 +138,18 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     t.start()
 
   def yank(self, size, key):
-    blobs = otpauth.totp_iter(self.showing.clipIter())
-    if sys.platform in ('win32', 'cygwin'):
-      import winclipboard
-      winclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
-    elif version.is_wsl():
-      import wslclipboard
-      wslclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
-    elif sys.platform == 'darwin':
-      import macclipboard
-      macclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
-    elif version.HAS_TERMUX_API:
-      import termuxclipboard
-      termuxclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
+    if self.ui.clipboard:
+      blobs = otpauth.totp_iter(self.showing.clipIter())
+      self.ui.clipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
     else:
-      import xclipboard
-      xclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
+      self.ui.status("Clipboard support unavailable");
 
   def capital_yank(self, size, key):
-    blobs = otpauth.totp_iter(self.showing.clipIter())
-    if sys.platform in ('win32', 'cygwin'):
-      import winclipboard
-      winclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
-    elif version.is_wsl():
-      import wslclipboard
-      wslclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
-    elif sys.platform == 'darwin':
-      import macclipboard
-      macclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
-    elif version.HAS_TERMUX_API:
-      import termuxclipboard
-      termuxclipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
+    if self.ui.clipboard:
+      blobs = otpauth.totp_iter(self.showing.clipIter())
+      self.ui.clipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
     else:
-      import xclipboard
-      xclipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui, auto_advance=False)
+      self.ui.status("Clipboard support unavailable");
 
   def edit(self, size, key):
     self.ui.container.set_focus(self.pwForm)
@@ -497,42 +475,20 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     return ret
 
   def yank(self, size, key):
-    label = self._w.get_focus()[0].kosh_entry
-    blob = otpauth.try_totp_str(self.entry[label])
-    if sys.platform in ('win32', 'cygwin'):
-      import winclipboard
-      winclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
-    elif version.is_wsl():
-      import wslclipboard
-      wslclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
-    elif sys.platform == 'darwin':
-      import macclipboard
-      macclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
-    elif version.HAS_TERMUX_API:
-      import termuxclipboard
-      termuxclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
+    if self.ui.clipboard:
+      label = self._w.get_focus()[0].kosh_entry
+      blob = otpauth.try_totp_str(self.entry[label])
+      self.ui.clipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
     else:
-      import xclipboard
-      xclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui)
+      self.ui.status("Clipboard support unavailable");
 
   def capital_yank(self, size, key):
-    label = self._w.get_focus()[0].kosh_entry
-    blob = otpauth.try_totp_str(self.entry[label])
-    if sys.platform in ('win32', 'cygwin'):
-      import winclipboard
-      winclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
-    elif version.is_wsl():
-      import wslclipboard
-      wslclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
-    elif sys.platform == 'darwin':
-      import macclipboard
-      macclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
-    elif version.HAS_TERMUX_API:
-      import termuxclipboard
-      termuxclipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
+    if self.ui.clipboard:
+      label = self._w.get_focus()[0].kosh_entry
+      blob = otpauth.try_totp_str(self.entry[label])
+      self.ui.clipboard.sendViaClipboardSimple([(label, blob)], self.entry.name, ui=self.ui)
     else:
-      import xclipboard
-      xclipboard.sendViaClipboard([(label, blob)], self.entry.name, ui=self.ui, auto_advance=False)
+      self.ui.status("Clipboard support unavailable");
 
   def runscript(self, size, key):
     if self.editing:
@@ -583,6 +539,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
     self.vi = widgets.viCommandBar(self.container, search_function=self.pwList.search)
     urwid.WidgetWrap.__init__(self, self.vi)
     self.touch()
+    self.init_clipboard()
 
   def touch(self):
     if not hasattr(self, 'expire') or self.expire >= time.time() or self.vi.variables['pause']:
@@ -675,3 +632,21 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
         if response:
           raise
         continue
+
+  def init_clipboard(self):
+    try:
+      if sys.platform in ('win32', 'cygwin'):
+        import winclipboard as clipboard
+      elif version.is_wsl():
+        import wslclipboard as clipboard
+      elif sys.platform == 'darwin':
+        import macclipboard as clipboard
+      elif version.HAS_TERMUX_API:
+        import termuxclipboard as clipboard
+      else:
+        import xclipboard as clipboard
+    except Exception as e:
+      self.ui.status("Error intialising clipboard support: %s" % str(e));
+      clipboard = None
+    self.clipboard = clipboard
+

@@ -102,6 +102,9 @@ def _ownSelections(display, win, selections):
       raise Exception('Failed to make %s own selection %i, owned by %s' % (win, selection, owner))
   return timestamp
 
+def sendViaClipboardSimple(*a, **kw)
+  return sendViaClipboard(*a, auto_advance=False, **kw)
+
 def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_null(), auto_advance=True):
   """
   Send a list of blobs via the clipboard (using X selections, cut buffers are
