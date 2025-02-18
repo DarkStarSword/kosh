@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vi:sw=2:ts=2:expandtab
 
-# Copyright (C) 2009-2021 Ian Munsie
+# Copyright (C) 2009-2025 Ian Munsie
 #
 # Kosh is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 import os, sys
-import fcntl, errno
+import errno
 try:
   # Getting a bit sick of packages that never heard of backwards compatibility...
   import Cryptodome.Hash.SHA
@@ -310,6 +310,7 @@ class KoshDB(dict):
 
   def __init__(self, filename, prompt):
     self.filename = filename
+    self.lock_fp = None
 
     if os.path.isfile(filename):
       self._open(filename, prompt)
@@ -320,6 +321,9 @@ class KoshDB(dict):
     if '_masterKeys' in self:
       for x in self._masterKeys:
         x.expire()
+    if self.lock_fp is not None:
+      self.lock_fp.close()
+      os.remove(self.lock_fp.name)
 
   def _create(self, filename, prompt):
     msg = 'New Password Database\nEnter passphrase:'
@@ -374,7 +378,13 @@ class KoshDB(dict):
         fp.write(b"# WARNING: Above entries not tracked\n")
 
       fp.flush()
+      # Windows cannot rename open files:
+      fp.close()
+      self.fp.close()
       if os.path.exists(filename):
+        # Windows cannot rename over the top of another file:
+        if os.path.exists(filename+'~'):
+          os.remove(filename+'~')
         os.rename(filename, filename+'~')
       os.rename(fp.name, filename)
 
@@ -384,12 +394,29 @@ class KoshDB(dict):
   def _open(self, filename, prompt):
     self.fp = open(filename, 'rb+') # Must open for write access for lock to succeed
     try:
+      import fcntl
       fcntl.lockf(self.fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except IOError as e:
       if e.errno not in (errno.EACCES, errno.EAGAIN):
         raise
       # TODO: Allow read only access
       raise FileLocked()
+    except ImportError:
+      # Windows doesn't have fcntl. Ideally we would just not pass
+      # FILE_SHARE_READ when opening the database, but that would need to go
+      # through too much win32api. Fall back to using a separate lock file:
+      try:
+        lock_filename = filename+'.lock'
+        if os.path.exists(lock_filename):
+          # Try deleting it in case it's just stale. Since this is Windows only
+          # code, this remove will fail if another instance still has it open.
+          # Note that this would not be a good idea on most other platforms.
+          os.remove(lock_filename)
+        self.lock_fp = open(lock_filename, 'x') # Exclusive create mode
+        self.lock_fp.write(str(os.getpid()))
+        self.lock_fp.flush()
+      except (FileExistsError, PermissionError):
+        raise FileLocked()
     self._readExpect(KoshDB.FILE_HEADER)
     self._masterKeys = []
     self._lines = []

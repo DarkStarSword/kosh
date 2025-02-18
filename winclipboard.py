@@ -309,7 +309,7 @@ class ClipboardWindow(object):
       # Urwid - get_input_descriptors() no longer returns raw file numbers, so
       # check the io.TextIOWrapper name as well. Fixes input erroneously going
       # through to urwid during a clipboard operation in cygwin:
-      if fd == sys.stdin.fileno() or fd.name == '<stdin>':
+      if fd == sys.stdin.fileno() or (hasattr(fd, 'name') and fd.name == '<stdin>'):
         char = sys.stdin.read(1)
         if char == '\n':
           next(self)

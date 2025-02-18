@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
+import sys
+
 def disable_ptrace():
   # This prevents the opportunistic attack whereby someone notices kosh left
   # running on an unattended workstation and runs gcore to extract passwords
@@ -39,14 +41,14 @@ def disable_ptrace():
     libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
   except AttributeError: # Not Linux
     pass
-disable_ptrace()
+if sys.platform != 'win32': # TODO: Implement Windows equivalent
+  disable_ptrace()
 
 passdb_default = '~/.kosh/koshdb'
 
 urwid_req_version = '0.9.9.1' # Fixme: what version is actually required?
 
 import version
-import sys
 import os
 __version__ = version.__version__
 version.checkCrypto()
