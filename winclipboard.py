@@ -29,7 +29,7 @@ console_poll_ms = 20
 # who's asking for the clipboard we can't explicitly blacklist these apps, but
 # this seems to be the behaviour they all have in common. If it is actually
 # intended to hand the credentials over to these use a capital yank instead.
-ignore_clipboard_requests_within = 0.03
+ignore_clipboard_requests_within = 0.05
 
 # Example of creating a window via ctypes (only necessary to take ownership of
 # the clipboard to know when an application requests the contents. If we just
