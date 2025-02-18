@@ -217,6 +217,13 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.all_revealed = False
     self.content = None
 
+  def selectable(self):
+    # This fixes an issue where the passwordForm for the first ever created
+    # entry cannot be edited, seemingly it's selectable status doesn't get
+    # properly processed after the _set_w call?. This doesn't feel like the
+    # correct way to fix this, but seems to work :shrug:
+    return True
+
   def showNone(self):
     if self.editing:
       return
