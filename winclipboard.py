@@ -305,7 +305,11 @@ class ClipboardWindow(object):
       break
 
     for fd in readable:
-      if fd == sys.stdin.fileno():
+      # Something seems to have changed in during the Python 3 update, or maybe
+      # Urwid - get_input_descriptors() no longer returns raw file numbers, so
+      # check the io.TextIOWrapper name as well. Fixes input erroneously going
+      # through to urwid during a clipboard operation in cygwin:
+      if fd == sys.stdin.fileno() or fd.name == '<stdin>':
         char = sys.stdin.read(1)
         if char == '\n':
           next(self)
