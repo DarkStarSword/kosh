@@ -212,7 +212,9 @@ def copy_text_simple(blob, hWnd=None):
   copy_text_deferred(blob)
 
 def empty_clipboard(ui, hWnd=None):
-  user32.OpenClipboard(hWnd)
+  # Don't pass the hWnd to OpenClipboard, otherwise EmptyClipboard sets us as
+  # the owner causing stalls/errors for the next clipboard owner
+  user32.OpenClipboard(None)
   user32.EmptyClipboard()
   user32.CloseClipboard()
   ui.status('Clipboard Cleared', append=True)
@@ -512,7 +514,7 @@ def stdin_thread_main(blob_queue):
     elif blob:
       blob_queue.put((blob, field, record))
     else:
-      blob_queue.shutdown()
+      blob_queue.shutdown() # New in Python 3.13
       assert(clip_win) # FIXME: Ensure clip_win has been created by now
       user32.PostMessageA(clip_win.hWnd, winmisc.WM_USER, 1, 0) # Clear
       user32.PostMessageA(clip_win.hWnd, winmisc.WM_USER, 2, 0) # Shutdown
