@@ -291,6 +291,9 @@ class ClipboardWindow(object):
     # This is a hack to redraw the screen - we really should
     # restructure all this so as not to block instead:
     ui_fds = self.ui.mainloop.screen.get_input_descriptors()
+    # In win32 urwid uses a socket to pass stdin from a separate thread, so we
+    # need to consider that socket as well:
+    urwid_stdin_fd = self.ui.mainloop.screen._input_fileno()
     if ui_fds is None: ui_fds = []
     select_fds = set(ui_fds)
     if not select_fds: return
@@ -307,13 +310,18 @@ class ClipboardWindow(object):
     for fd in readable:
       # Something seems to have changed in during the Python 3 update, or maybe
       # Urwid - get_input_descriptors() no longer returns raw file numbers, so
-      # check the io.TextIOWrapper name as well. Fixes input erroneously going
+      # check the io.TextIOWrapper name as well, Fixes input erroneously going
       # through to urwid during a clipboard operation in cygwin:
-      if fd == sys.stdin.fileno() or (hasattr(fd, 'name') and fd.name == '<stdin>'):
-        char = sys.stdin.read(1)
-        if char == '\n':
+      if fd == sys.stdin.fileno() \
+          or (hasattr(fd, 'fileno') and fd.fileno() == urwid_stdin_fd) \
+          or (hasattr(fd, 'name') and fd.name == '<stdin>'):
+        if hasattr(fd, 'recv'):
+          char = fd.recv(1)
+        else:
+          char = fd.read(1)
+        if char in ('\n', b'\r'):
           next(self)
-        elif char == '\x1b':
+        elif char in ('\x1b', b'\x1b'):
           empty_clipboard(self.ui, self.hWnd)
           assert(self.proxy_queue is None)
           user32.DestroyWindow(self.hWnd)
@@ -408,6 +416,7 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
     # FIXME: This works in cygwin, but might be problematic under native
     # Windows Python where select() only works on sockets
     ui_fds = ui.mainloop.screen.get_input_descriptors()
+    urwid_stdin_fd = ui.mainloop.screen._input_fileno()
     if ui_fds is None: ui_fds = []
     select_fds = set(ui_fds)
 
@@ -428,11 +437,16 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
           break
 
         for fd in readable:
-          if fd == sys.stdin.fileno():
-            char = sys.stdin.read(1)
-            if char == '\n':
+          if fd == sys.stdin.fileno() \
+              or (hasattr(fd, 'fileno') and fd.fileno() == urwid_stdin_fd) \
+              or (hasattr(fd, 'name') and fd.name == '<stdin>'):
+            if hasattr(fd, 'recv'):
+              char = fd.recv(1)
+            else:
+              char = fd.read(1)
+            if char in ('\n', b'\r'):
               return True
-            elif char == '\x1b':
+            elif char in ('\x1b', b'\x1b'):
               return False
           elif fd in ui_fds:
             # This is a hack to redraw the screen - we really should
