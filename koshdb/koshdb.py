@@ -380,7 +380,8 @@ class KoshDB(dict):
       fp.flush()
       # Windows cannot rename open files:
       fp.close()
-      self.fp.close()
+      if hasattr(self, 'fp'): # Won't exist yet if creating the db
+        self.fp.close()
       if os.path.exists(filename):
         # Windows cannot rename over the top of another file:
         if os.path.exists(filename+'~'):
@@ -388,10 +389,13 @@ class KoshDB(dict):
         os.rename(filename, filename+'~')
       os.rename(fp.name, filename)
 
+      # Ensure we (still) have the db locked:
+      self._open_and_lock(filename)
+
       if bug:
         raise Bug("Refer to %s for details" % filename)
 
-  def _open(self, filename, prompt):
+  def _open_and_lock(self, filename):
     self.fp = open(filename, 'rb+') # Must open for write access for lock to succeed
     try:
       import fcntl
@@ -405,18 +409,22 @@ class KoshDB(dict):
       # Windows doesn't have fcntl. Ideally we would just not pass
       # FILE_SHARE_READ when opening the database, but that would need to go
       # through too much win32api. Fall back to using a separate lock file:
-      try:
-        lock_filename = filename+'.lock'
-        if os.path.exists(lock_filename):
-          # Try deleting it in case it's just stale. Since this is Windows only
-          # code, this remove will fail if another instance still has it open.
-          # Note that this would not be a good idea on most other platforms.
-          os.remove(lock_filename)
-        self.lock_fp = open(lock_filename, 'x') # Exclusive create mode
-        self.lock_fp.write(str(os.getpid()))
-        self.lock_fp.flush()
-      except (FileExistsError, PermissionError):
-        raise FileLocked()
+      if self.lock_fp is None:
+        try:
+          lock_filename = filename+'.lock'
+          if os.path.exists(lock_filename):
+            # Try deleting it in case it's just stale. Since this is Windows only
+            # code, this remove will fail if another instance still has it open.
+            # Note that this would not be a good idea on most other platforms.
+            os.remove(lock_filename)
+          self.lock_fp = open(lock_filename, 'x') # Exclusive create mode
+          self.lock_fp.write(str(os.getpid()))
+          self.lock_fp.flush()
+        except (FileExistsError, PermissionError):
+          raise FileLocked()
+
+  def _open(self, filename, prompt):
+    self._open_and_lock(filename)
     self._readExpect(KoshDB.FILE_HEADER)
     self._masterKeys = []
     self._lines = []

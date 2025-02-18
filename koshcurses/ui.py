@@ -42,6 +42,7 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     self.db = db
     self.pwForm = pwForm
     self.ui = ui
+    self.showing = None
     self.visibleEntries = list(self.db.keys())
     self.refresh()
     urwid.WidgetWrap.__init__(self, self.lb)
@@ -105,16 +106,25 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     # FIXME: focus
 
   def showOlder(self, size, key):
+    if not self.showing:
+      self.ui.status("No entry selected");
+      return
     if self.showing.older is not None:
       self.showing = self.showing.older
       self.pwForm.show(self.showing)
 
   def showNewer(self, size, key):
+    if not self.showing:
+      self.ui.status("No entry selected");
+      return
     if self.showing.newer is not None:
       self.showing = self.showing.newer
       self.pwForm.show(self.showing)
 
   def goto(self, size, key):
+    if not self.showing:
+      self.ui.status("No entry selected");
+      return
     def launch(url):
       import subprocess
       try:
@@ -138,6 +148,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     t.start()
 
   def yank(self, size, key):
+    if not self.showing:
+      self.ui.status("No entry selected");
+      return
     if self.ui.clipboard:
       blobs = otpauth.totp_iter(self.showing.clipIter())
       self.ui.clipboard.sendViaClipboard(blobs, self.showing.name, ui=self.ui)
@@ -145,6 +158,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       self.ui.status("Clipboard support unavailable");
 
   def capital_yank(self, size, key):
+    if not self.showing:
+      self.ui.status("No entry selected");
+      return
     if self.ui.clipboard:
       blobs = otpauth.totp_iter(self.showing.clipIter())
       self.ui.clipboard.sendViaClipboardSimple(blobs, self.showing.name, ui=self.ui)
@@ -152,6 +168,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
       self.ui.status("Clipboard support unavailable");
 
   def edit(self, size, key):
+    if not self.showing:
+      self.ui.status("No entry selected");
+      return
     self.ui.container.set_focus(self.pwForm)
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
 
@@ -159,6 +178,9 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     return not self.pwForm.editing
 
   def delete(self, size, key):
+    if not self.showing:
+      self.ui.status("No entry selected");
+      return
     del self.db[self.showing]
     self.showing = None
     self.refresh()
@@ -193,6 +215,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.ui = ui
     self.editing = False
     self.all_revealed = False
+    self.content = None
 
   def showNone(self):
     if self.editing:
@@ -422,10 +445,10 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       # FIXME: Notify
       return
 
+    copy_field_order = None
     if self.edit_clip_order.get_state():
       copy_field_order = []
     elif 'CopyFieldOrder' in self.entry.meta:
-      copy_field_order = None
       del self.entry.meta['CopyFieldOrder']
 
     self.entry.name = self.fname.get_edit_text()
