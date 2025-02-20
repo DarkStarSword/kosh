@@ -41,7 +41,10 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
           break
 
         for fd in readable:
-          if fd == sys.stdin.fileno():
+          # Same issue we encountered in cygwin where get_input_descriptors()
+          # has changed to return an io.TextIOWrapper instead of raw fileno
+          if fd == sys.stdin.fileno() \
+              or (hasattr(fd, 'name') and fd.name == '<stdin>'):
             char = sys.stdin.read(1)
             if char == '\n':
               return True

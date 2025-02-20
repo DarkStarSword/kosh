@@ -95,7 +95,8 @@ def tty_ui_loop(ui, proxy_io=[]):
         break
 
       for fd in readable:
-        if fd == sys.stdin.fileno():
+        if fd == sys.stdin.fileno() \
+            or (hasattr(fd, 'name') and fd.name == '<stdin>'): # Pre-emptive fix
           char = sys.stdin.read(1)
           if char == '\n':
             if proxy_io:

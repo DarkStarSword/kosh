@@ -252,7 +252,8 @@ def sendViaClipboard(blobs, record = None, txtselections = defSelections, ui=ui_
           break
 
         for fd in readable:
-          if fd == sys.stdin.fileno():
+          if fd == sys.stdin.fileno() \
+              or (hasattr(fd, 'name') and fd.name == '<stdin>'): # Pre-emptive fix
             char = sys.stdin.read(1)
             if char == '\n':
               skip = True
