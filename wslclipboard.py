@@ -16,7 +16,7 @@ import time
 
 # If winclipboard.py takes longer than this to respond, warn that Windows
 # Defender might be slowing things down. Typical times are about 0.15 seconds:
-excessive_time = 0.4
+excessive_time = 0.5
 
 class WSLClipboardProxy(object):
   def __init__(self, ui):
