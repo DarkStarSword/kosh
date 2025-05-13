@@ -172,6 +172,12 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     if not self.showing:
       self.ui.status("No entry selected");
       return
+    if self.pwForm.editing:
+      # The left side isn't supposed to be selectable while editing, but it
+      # seems like it is. Prevent accidentally editing a different record
+      # clobbering the one being edited.
+      self.ui.status("Already editing another entry!");
+      return
     self.ui.container.set_focus(self.pwForm)
     self.pwForm.edit(self.showing.clone(), self.ui.commitNew, self.ui.cancel)
 
@@ -182,10 +188,23 @@ class passwordList(widgets.keymapwid, urwid.WidgetWrap):
     if not self.showing:
       self.ui.status("No entry selected");
       return
-    del self.db[self.showing]
-    self.showing = None
-    self.refresh()
-    self.db.write()
+    if self.pwForm.editing:
+      # The left side isn't supposed to be selectable while editing, but it
+      # seems like it is. Prevent accidentally editing a different record
+      # clobbering the one being edited.
+      return
+
+    message = 'Really delete %s?' % self.showing.name
+    dlg = dialog.YesNoDialog(message=message)
+    self.ui.mainloop.stop()
+    response = dlg.showModal()
+    self.ui.mainloop.start()
+    if response:
+      del self.db[self.showing]
+      self.showing = None
+      self.visibleEntries = list(self.db.keys())
+      self.refresh()
+      self.db.write()
 
   def search(self, search):
     if not search:
