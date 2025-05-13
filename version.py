@@ -27,6 +27,7 @@ __version__ = 'v0.1 development' #FIXME: use git describe if from git repository
 HAS_TERMUX_API = False
 
 def import_ask_install(module, package, msg, version_check=None, uninstall=None):
+  ret = None
   try:
       ret = __import__(module)
   except ImportError:
