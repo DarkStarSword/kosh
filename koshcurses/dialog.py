@@ -17,6 +17,7 @@
 # along with Kosh.  If not, see <http://www.gnu.org/licenses/>.
 
 import urwid
+import io
 from . import widgets
 from functools import reduce
 
@@ -74,6 +75,36 @@ class YesNoDialog(urwid.WidgetWrap):
     overlay = urwid.Overlay(self, parent, 'center', self.width, 'middle', self.height)
     urwid.MainLoop(overlay).run()
     return self.response
+
+class QRDialog(urwid.WidgetWrap):
+  def __init__(self, message=None):
+    try:
+      import qrcode
+      qr = qrcode.QRCode(border=1)
+      qr.add_data(message)
+      buf = io.StringIO()
+      qr.print_ascii(out=buf)
+      message = buf.getvalue().rstrip('\n')
+    except ImportError:
+      message = "Please install python3-qrcode to export QR Codes"
+
+    listboxcontent = [
+      urwid.Text(message),
+      urwid.Padding(urwid.Button('OK', self.on_press), 'center', 6),
+    ]
+    listbox = urwid.ListBox(listboxcontent)
+    self.width = reduce(lambda m,s: max(len(s),m), message.split('\n'), 0) + 2
+    self.height = message.count('\n') + len(listboxcontent) + 2
+    urwid.WidgetWrap.__init__(self, urwid.LineBox(listbox))
+
+  def on_press(self, widget):
+    raise urwid.ExitMainLoop()
+
+  def showModal(self, parent=None):
+    if parent is None:
+      parent = urwid.SolidFill()
+    overlay = urwid.Overlay(self, parent, 'center', self.width, 'middle', self.height)
+    urwid.MainLoop(overlay).run()
 
 if __name__=='__main__':
   d = inputDialog(message='Enter master password:', width=30)

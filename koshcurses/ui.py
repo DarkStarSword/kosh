@@ -207,6 +207,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       'y': 'yank',
       'Y': 'capital_yank',
       'S': 'runscript',
+      'q': 'export_qrcode',
       }
 
   def __init__(self, ui):
@@ -542,6 +543,20 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     except Exception as e:
       # FIXME: Print traceback, this status message might get overridden by "matched n entries"
       self.ui.status("%s while running password changing script: %s" % (e.__class__.__name__, str(e)));
+
+  def export_qrcode(self, size, key):
+    '''
+    Display the value of the selected field as a QR Code. Mostly intended for
+    exporting TOTP 2FA entries to other authenticator apps.
+    '''
+    # TODO: Keep count down timer on screen and lock when it expires -
+    # currently locks only after dismissing QR code. Could replace the main
+    # window contents rather than displaying as a modal dialog...?
+    label = self._w.get_focus()[0].kosh_entry
+    dlg = dialog.QRDialog(message=self.entry[label])
+    self.ui.mainloop.stop()
+    response = dlg.showModal()
+    self.ui.mainloop.start()
 
   def _update(self):
     self.lb = urwid.ListBox(self.content)
