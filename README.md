@@ -3,14 +3,9 @@ Kosh Password Manager
 
 WHY YOU SHOULD NOT USE THIS PASSWORD MANAGER
 --------------------------------------------
-- It has several bugs that may cause you to lose a partially edited entry!
-
-  - Do not click on a different password entry while editing one!
-
-  - Do not run two instances of kosh simultaneously!
-
-  - The database won't be saved if it hits a bug (however it does save pretty
-    aggressively, so as long as you hit save you should be golden)
+- The database won't be saved if it hits a bug, which could cause data loss
+  (however I've fixed all the bugs I know of that could cause this, and it does
+  save pretty aggressively, so as long as you hit save you should be golden)
 
 - It has not been security audited, so keep your password database secure! (If
   you are a security person, feel free to look at the code and tell me how
@@ -18,12 +13,8 @@ WHY YOU SHOULD NOT USE THIS PASSWORD MANAGER
 
 - It currently lacks an ability to change the master password
 
-- It does not take any steps to prevent someone attaching gdb to it and
-  extracting the passwords from memory (and I'm a hypocrite since I've
-  criticised other password managers for exactly this problem)
-
-- It does not time out and lock the database while idle (it used to... but it
-  annoyed me too much)
+- On Windows it does not prevent someone attaching a debugger to it and
+  extracting the passwords from memory (it does disable ptrace on Linux)
 
 I'm releasing this anyway because I'm working on other projects and just
 haven't got around to addressing these issues. Despite these, it is a useful
@@ -35,13 +26,16 @@ Why you might want to use this password manager anyway
 
 - Written in Python
 
+- Cross platform. Runs on Linux, Windows, WSL1/2, cygwin, Mac, and even Android
+  under Termux, and probably anywhere else you can run Python.
+
 - Keeps a history of the password entries so you can look back in time to see
   what passwords you used to use with Ctrl+p, Ctrl+n.
 
-- Smart X Clipboard integration. Copies the username field, then as soon as
-  that has been pasted it will AUTOMATICALLY copy the password field, then once
-  that is pasted it will automatically clear the clipboard! Just yank, paste,
-  paste :)
+- Smart multi-platform Clipboard integration. Copies the username field, then
+  (on supported platforms) as soon as that has been pasted it will
+  AUTOMATICALLY copy the password field, then once that is pasted it will
+  automatically clear the clipboard!  Just yank, paste, paste :)
 
 - Database format is designed specifically to make it easy to edit on multiple
   devices and synchronise the changes with external tools (personally I have my
@@ -67,6 +61,16 @@ Why you might want to use this password manager anyway
   another field called 'OldPassword' - another hack, once this feature is
   complete it will automatically get the old password from the history)
 
+- Two Factor Authentication (Time-based one-time password) support that will
+  automatically handle any fields following the otpauth:// URI format
+  (typically imported via QR codes intended for Authenticator apps), allowing
+  the 2FA codes to be copied to the clipboard or displayed like other
+  authenticator apps.
+
+- QR Code import/export, particularly useful for importing 2FA QR codes from
+  the clipboard. (Note that this does not yet support importing from other
+  Authenticator apps, only the initial 2FA provisioning QR Codes are supported)
+
 Keys
 ----
 - /: Search for entry
@@ -87,6 +91,10 @@ Keys
   username field, then the password field. If used in the right pane it will
   copy the highlighted field.
 
+- Shift+Y: Copy entry to clipboard in dumb mode. For when you need to paste the
+  entry several times, or when dealing with an application / Operating system
+  that just doesn't handle the smart clipboard support well.
+
 - g: Open web browser to the URL field of the currently highlighted entry.
 
 - Ctrl+g: Call out to pwgen to generate a random password in the field
@@ -98,3 +106,11 @@ Keys
 
 - S: Run highlighted SSH / HTTP password change script (note - this is a
   temporary hack until this feature is properly integrated into the UI)
+
+- q: Display selected entry as a QR Code (typically for exporting 2FA entries
+  to authenticator apps)
+
+- :set pause : Freeze the count down timer for cases where you need the
+  password manager to remain open and unlocked for an extended time. Not
+  recommended, use at your own risk and make sure you manually close it when
+  you are done.
