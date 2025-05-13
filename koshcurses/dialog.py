@@ -76,7 +76,7 @@ class YesNoDialog(urwid.WidgetWrap):
     urwid.MainLoop(overlay).run()
     return self.response
 
-class QRDialog(urwid.WidgetWrap):
+class QRDialog(urwid.ListBox):
   def __init__(self, message=None):
     try:
       import qrcode
@@ -89,22 +89,28 @@ class QRDialog(urwid.WidgetWrap):
       message = "Please install python3-qrcode to export QR Codes"
 
     listboxcontent = [
-      urwid.Text(message),
+      urwid.Text(("qrcode", message)),
       urwid.Padding(urwid.Button('OK', self.on_press), 'center', 6),
     ]
-    listbox = urwid.ListBox(listboxcontent)
-    self.width = reduce(lambda m,s: max(len(s),m), message.split('\n'), 0) + 2
-    self.height = message.count('\n') + len(listboxcontent) + 2
-    urwid.WidgetWrap.__init__(self, urwid.LineBox(listbox))
+    urwid.ListBox.__init__(self, listboxcontent)
+    self.width = reduce(lambda m,s: max(len(s),m), message.split('\n'), 0)
+    self.height = message.count('\n') + len(listboxcontent)
 
   def on_press(self, widget):
     raise urwid.ExitMainLoop()
 
   def showModal(self, parent=None):
+    # OpenCV only recognises black on white QR codes, not white on black, while
+    # Android reads it either way. Since there might be others picky like that,
+    # try to set the terminal palette
+    palette = [
+        ("qrcode", "black", "light gray"),
+    ]
+
     if parent is None:
       parent = urwid.SolidFill()
     overlay = urwid.Overlay(self, parent, 'center', self.width, 'middle', self.height)
-    urwid.MainLoop(overlay).run()
+    urwid.MainLoop(overlay, palette).run()
 
 if __name__=='__main__':
   d = inputDialog(message='Enter master password:', width=30)
