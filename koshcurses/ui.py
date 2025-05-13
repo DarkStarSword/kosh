@@ -532,6 +532,10 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     return ret
 
   def yank(self, size, key):
+    if self.editing:
+      # Added to avoid exception if accidentally type y on Save/Cancel buttons
+      # while editing. Not applicable in edit mode anyway, so just disallow.
+      return
     if self.ui.clipboard:
       label = self._w.get_focus()[0].kosh_entry
       blob = otpauth.try_totp_str(self.entry[label])
@@ -540,6 +544,10 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       self.ui.status("Clipboard support unavailable");
 
   def capital_yank(self, size, key):
+    if self.editing:
+      # Added to avoid exception if accidentally type Y on Save/Cancel buttons
+      # while editing. Not applicable in edit mode anyway, so just disallow.
+      return
     if self.ui.clipboard:
       label = self._w.get_focus()[0].kosh_entry
       blob = otpauth.try_totp_str(self.entry[label])
@@ -578,6 +586,10 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     # TODO: Keep count down timer on screen and lock when it expires -
     # currently locks only after dismissing QR code. Could replace the main
     # window contents rather than displaying as a modal dialog...?
+    if self.editing:
+      # Added to avoid exception if accidentally type q on Save/Cancel buttons
+      # while editing. Not applicable in edit mode anyway, so just disallow.
+      return
     label = self._w.get_focus()[0].kosh_entry
     dlg = dialog.QRDialog(message=self.entry[label])
     self.ui.mainloop.stop()
