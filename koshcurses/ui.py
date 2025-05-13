@@ -24,6 +24,7 @@ import sys
 from functools import reduce
 import version
 import otpauth
+import itertools
 
 class passwordList(widgets.keymapwid, urwid.WidgetWrap):
   keymap = {
@@ -314,6 +315,11 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.fname = widgets.koshEdit('Name: ', self.entry.name)
     self.fields = [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ]
     self.newfield = widgets.koshEdit('Add new field: ')
+    self.import_qr = widgets.koshEdit('Import QR Code from clipboard: ', edit_text='2FA')
+    if not hasattr(self.ui.clipboard, 'get_clipboard_qrcode'):
+      self.import_qr = urwid.Text('QR Code import not implemented')
+    elif not self.ui.clipboard.check_qrcode_requirements():
+      self.import_qr = urwid.Text('QR Code import missing PIL/pyzbar')
     self.record_http_script = widgets.koshEdit('Record HTTP password change script: ')
     self.edit_clip_order = urwid.CheckBox('Edit clipboard order', 'CopyFieldOrder' in entry.meta)
     urwid.connect_signal(self.edit_clip_order, 'postchange', self.on_edit_clip_order_change)
@@ -331,7 +337,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
         (3, self.get_clip_order_widget(field))
       ]) for field in self.fields]
 
-    self.content = [self.fname] + rows + [urwid.Divider(), self.newfield,
+    self.content = [self.fname] + rows + [urwid.Divider(), self.newfield, self.import_qr,
         self.record_http_script, self.edit_clip_order] + [ urwid.GridFlow(
           [urwid.Button('Save', self.commit),
             urwid.Button('Cancel', self.discard) ],
@@ -359,6 +365,25 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self._edit()
     self._update()
     #self._w.set_focus(self.newfield)
+
+  def import_qr_from_clipboard(self):
+    _field = field = self.import_qr.get_edit_text().strip()
+    if not field: return
+    for i in itertools.count(1):
+      if field not in self.entry:
+        break
+      field = '%s%i' % (_field, i)
+
+    data = self.ui.clipboard.get_clipboard_qrcode()
+    if data is None:
+      self.ui.status('No QR Code found in clipboard')
+      return
+
+    self.entry[field] = data
+    self.fields += [ widgets.passwordEdit(field+': ', data, revealable=True) ]
+    self._edit()
+    self._update()
+    self.ui.status('QR Code imported to %s, be sure to save the record.\nYou should ensure there are no copies saved in your screenshots' % field)
 
   def do_record_http_script(self):
     field = 'HACK_HTTP-SCRIPT_'+self.record_http_script.get_edit_text().strip()
@@ -502,6 +527,7 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
       if key == 'l': return self.keypress(size, 'right')
       if key == 'enter':
         if focus == self.newfield: self.add_new_field()
+        if focus == self.import_qr: self.import_qr_from_clipboard()
         if focus == self.record_http_script: self.do_record_http_script()
     return ret
 
@@ -680,17 +706,9 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
 
   def init_clipboard(self):
     try:
-      if sys.platform in ('win32', 'cygwin'):
-        import winclipboard as clipboard
-      elif version.is_wsl():
-        import wslclipboard as clipboard
+      clipboard = version.get_platform_clipboard()
+      if hasattr(clipboard, 'init'):
         clipboard.init(self)
-      elif sys.platform == 'darwin':
-        import macclipboard as clipboard
-      elif version.HAS_TERMUX_API:
-        import termuxclipboard as clipboard
-      else:
-        import xclipboard as clipboard
     except Exception as e:
       self.ui.status("Error intialising clipboard support: %s" % str(e));
       clipboard = None

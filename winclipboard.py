@@ -537,6 +537,50 @@ def stdin_iter(blob_queue):
     except queue.ShutDown:
       raise StopIteration()
 
+def check_qrcode_requirements():
+  try:
+    import PIL
+    #import pyzbar
+    import numpy
+    import cv2
+  except ImportError:
+    return False
+  return True
+
+def install_qrcode_requirements():
+  import version
+  version.install_qrcode_requirements()
+
+def get_clipboard_qrcode():
+  import PIL.ImageGrab
+  #import pyzbar.pyzbar
+  import numpy
+  import cv2
+  # https://stackoverflow.com/questions/27233351/how-to-decode-a-qr-code-image-in-preferably-pure-python#27294041
+  # TODO: Might be better to use screen grab() rather than grabclipboard()?
+  #       Would avoid Windows sniptool from saving a copy of the QR code...
+  #       Would need some delay to alt+tab back to the app displaying the code...
+  clipboard_image = PIL.ImageGrab.grabclipboard()
+  if clipboard_image is None:
+    return None
+
+  # pyzbar implementation. Not working...? Looks like libzbar dependency may be
+  # a PITA to install on other platforms anyway, so may not be worth bothering
+  # if OpenCV does what we need.
+  #data = pyzbar.pyzbar.decode(clipboard_image)
+  #return data
+
+  ocv_image = cv2.cvtColor(numpy.array(clipboard_image), cv2.COLOR_RGB2BGR)
+  detector = cv2.QRCodeDetector()
+  data, vertices_array, binary_qrcode = detector.detectAndDecode(ocv_image)
+  if vertices_array is None:
+    # Try inverting the image in case it's a white on black QR code from the
+    # terminal export - OpenCV seems to need it to be black on white
+    ocv_image = 255 - ocv_image
+    data, vertices_array, binary_qrcode = detector.detectAndDecode(ocv_image)
+  if vertices_array is not None:
+    return data
+
 if __name__ == '__main__':
   if len(sys.argv) == 2 and sys.argv[1] == "-":
     # This mode is used by WSL, as WSL cannot otherwise do advanced clipboard.
@@ -553,6 +597,16 @@ if __name__ == '__main__':
     thread.start()
     #os.set_blocking(sys.stdout.fileno(), False)
     sendViaClipboard(stdin_iter(blob_queue), ui=ui_tty(), auto_clear=False, proxy_queue=blob_queue)
+  elif len(sys.argv) == 2 and sys.argv[1] == "--check-qrcode-requirements":
+    sys.exit(0 if check_qrcode_requirements() else 1)
+  elif len(sys.argv) == 2 and sys.argv[1] == "--install-qrcode-requirements":
+    install_qrcode_requirements()
+  elif len(sys.argv) == 2 and sys.argv[1] == "--get-qrcode":
+    ret = get_clipboard_qrcode()
+    if ret is not None:
+      print(ret)
+    else:
+      sys.exit(1)
   else:
     args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
     blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))

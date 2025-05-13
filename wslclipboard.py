@@ -165,9 +165,28 @@ def attempt_install_winstore_python():
   # the alias is enabled in settings -> Manage App Execution Aliases
   subprocess.run("python.exe")
 
+def get_clipboard_qrcode():
+  winpython = subprocess.run("python.exe winclipboard.py --get-qrcode".split(),
+      cwd=os.path.dirname(os.path.realpath(sys.argv[0])),
+      stdout=subprocess.PIPE)
+  if winpython.returncode == 0:
+    return winpython.stdout.decode('ascii').strip()
+
+def check_qrcode_requirements():
+  exit_code = subprocess.call("python.exe winclipboard.py --check-qrcode-requirements".split(),
+      cwd=os.path.dirname(os.path.realpath(sys.argv[0])))
+  return exit_code == 0
+
+def install_qrcode_requirements():
+  subprocess.call("python.exe winclipboard.py --install-qrcode-requirements".split(),
+      cwd=os.path.dirname(os.path.realpath(sys.argv[0])))
+
 if __name__ == '__main__':
-  args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
-  blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))
-  #sendViaClipboardSimple(blobs, ui=ui_tty())
-  init()
-  sendViaClipboard(blobs, ui=ui_tty())
+  if len(sys.argv) == 2 and sys.argv[1] == "--get-qrcode":
+    print(get_clipboard_qrcode())
+  else:
+    args = sys.argv[1:] if sys.argv[1:] else ['usage: ' , sys.argv[0], ' { strings }']
+    blobs = list(zip([ "Item %i"%x for x in range(len(args)) ], args))
+    #sendViaClipboardSimple(blobs, ui=ui_tty())
+    init()
+    sendViaClipboard(blobs, ui=ui_tty())

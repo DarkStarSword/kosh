@@ -104,3 +104,63 @@ def checkWSLClipboard():
       answer = input('Open Windows Store to install native Python for advanced clipboard integration? (y/n) ').lower()
     if answer == 'y':
       wslclipboard.attempt_install_winstore_python()
+
+def get_platform_clipboard():
+  if sys.platform in ('win32', 'cygwin'):
+    import winclipboard as clipboard
+  elif is_wsl():
+    import wslclipboard as clipboard
+  elif sys.platform == 'darwin':
+    import macclipboard as clipboard
+  elif HAS_TERMUX_API:
+    import termuxclipboard as clipboard
+  else:
+    import xclipboard as clipboard
+  return clipboard
+
+def check_qrcode_import():
+  # On WSL these packages need to be installed in the Native Windows Python
+  # installation, not the WSL installation, so that the proxy can use them.
+  # Hence, this code is a little different to the other package checks (TODO:
+  # refactor).
+  clipboard = get_platform_clipboard()
+  if not hasattr(clipboard, 'check_qrcode_requirements'):
+    # Not implemented, not applicable
+    return
+  if clipboard.check_qrcode_requirements():
+    return
+  answer = None
+  while answer not in ('y', 'n'):
+    answer = input('Install pillow, numpy and OpenCV for QR Code import function? (y/n) ').lower()
+  if answer == 'y':
+    clipboard.install_qrcode_requirements()
+
+def install_qrcode_requirements():
+  # On WSL this will be called from the proxy under Native Python
+  subprocess.call([sys.executable] + "-m ensurepip --user".split())
+  try:
+    import PIL
+  except ImportError:
+    subprocess.call([sys.executable, "-m", "pip", "install", "pillow", "--user"])
+  # This may not be enough on non-Windows - doco indicates libzbar needs to be
+  # installed separately. This didn't end up working in my tests anyway, so
+  # ended up using OpenCV instead
+  #try:
+  #  import pyzbar
+  #except ImportError:
+  #  subprocess.call([sys.executable, "-m", "pip", "install", "pyzbar", "--user"])
+  try:
+    import numpy
+  except ImportError:
+    subprocess.call([sys.executable, "-m", "pip", "install", "numpy", "--user"])
+  try:
+    import cv2
+  except ImportError:
+    # cv2 has 4 multually exclusive packages, do not want multiple installed
+    # simultaneously, from https://pypi.org/project/opencv-python/
+    # opencv-python
+    # opencv-contrib-python
+    # opencv-python-headless
+    # opencv-contrib-python-headless
+    subprocess.call([sys.executable, "-m", "pip", "install", "opencv-python-headless", "--user"])
+  importlib.reload(site) # Ensure site-packages paths are up to date if pip just created it

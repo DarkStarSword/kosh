@@ -64,6 +64,8 @@ elif 'TERMUX_VERSION' in os.environ:
   version.checkTermuxAPI()
 else:
   version.checkXClipboard()
+# Should be done after clipboard check, especially for WSL clipboard:
+version.check_qrcode_import()
 
 from util.decorators import *
 import koshcurses.err
