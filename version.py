@@ -118,6 +118,9 @@ def get_platform_clipboard():
     import xclipboard as clipboard
   return clipboard
 
+def check_qrcode_export():
+  import_ask_install('qrcode', 'qrcode', 'ERROR: Python QR Code library not found, QR Code export will be unavailable')
+
 def check_qrcode_import():
   # On WSL these packages need to be installed in the Native Windows Python
   # installation, not the WSL installation, so that the proxy can use them.
