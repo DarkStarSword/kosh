@@ -14,6 +14,12 @@ import select
 import subprocess
 import time
 
+# How to launch an appropriate python?
+# python3.exe - should run python3.x if installed. Need to check what this does if python isn't installed - is it a stub like python.exe or does it just not exist?
+# python.exe - may point to either python 2 or 3, or a stub that will try to install python from Windows Store
+# py.exe - launcher designed to resolve these kind of issues, but may not be installed (e.g. Windows store version does NOT install it), so can't rely on it
+native_python_exe = "python3.exe"
+
 # If winclipboard.py takes longer than this to respond, warn that Windows
 # Defender might be slowing things down. Typical times are about 0.15 seconds:
 excessive_time = 0.8
@@ -21,7 +27,7 @@ excessive_time = 0.8
 class WSLClipboardProxy(object):
   def __init__(self, ui):
     start_time = time.time()
-    self.winpython = subprocess.Popen("python.exe winclipboard.py -".split(),
+    self.winpython = subprocess.Popen([native_python_exe, "winclipboard.py", "-"],
         cwd=os.path.dirname(os.path.realpath(sys.argv[0])),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE)#, stderr=subprocess.PIPE)
     #os.set_blocking(self.winpython.stdout.fileno(), False)
@@ -166,19 +172,19 @@ def attempt_install_winstore_python():
   subprocess.run("python.exe")
 
 def get_clipboard_qrcode():
-  winpython = subprocess.run("python.exe winclipboard.py --get-qrcode".split(),
+  winpython = subprocess.run([native_python_exe, "winclipboard.py", "--get-qrcode"],
       cwd=os.path.dirname(os.path.realpath(sys.argv[0])),
       stdout=subprocess.PIPE)
   if winpython.returncode == 0:
     return winpython.stdout.decode('ascii').strip()
 
 def check_qrcode_requirements():
-  exit_code = subprocess.call("python.exe winclipboard.py --check-qrcode-requirements".split(),
+  exit_code = subprocess.call([native_python_exe, "winclipboard.py", "--check-qrcode-requirements"],
       cwd=os.path.dirname(os.path.realpath(sys.argv[0])))
   return exit_code == 0
 
 def install_qrcode_requirements():
-  subprocess.call("python.exe winclipboard.py --install-qrcode-requirements".split(),
+  subprocess.call([native_python_exe, "winclipboard.py", "--install-qrcode-requirements"],
       cwd=os.path.dirname(os.path.realpath(sys.argv[0])))
 
 if __name__ == '__main__':
