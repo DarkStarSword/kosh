@@ -475,9 +475,9 @@ class KoshDB(dict):
   def _read_lines_from_fp(self, fp, source, passphrases, prompt):
     """Read and process all lines from an open file pointer."""
     self._current_source = source
-    for line in fp:
+    for lineno, line in enumerate(fp):
       if line.startswith(_masterKey.BLOB_PREFIX):
-        (key, passphrase) = self._unlockMasterKey(len(self._masterKeys), line, passphrases, prompt)
+        (key, passphrase) = self._unlockMasterKey(source, lineno, line, passphrases, prompt)
         self._masterKeys.append(key)
         passphrases.add(passphrase)
         self._lines.append((key, source))
@@ -578,7 +578,7 @@ class KoshDB(dict):
     # FIXME: Ensure entire chain is sorted
     return (new, old)
 
-  def _unlockMasterKey(self, idx, blob, passphrases, prompt):
+  def _unlockMasterKey(self, source, lineno, blob, passphrases, prompt):
     for passphrase in passphrases:
       try:
         key = _masterKey(passphrase, blob)
@@ -587,8 +587,11 @@ class KoshDB(dict):
       else:
         return (key, passphrase)
     while True:
+      linestr = ''
+      if lineno != 0:
+        linestr = ':%i' % lineno
       passphrase = prompt('Passphrase error\n'
-          'Enter master passphrase for key %i:' % (idx+1))
+          'Enter passphrase for %s%s:' % (source, linestr))
       try:
         key = _masterKey(passphrase, blob)
       except ChecksumFailure:
