@@ -311,6 +311,7 @@ class KoshDB(dict):
   def __init__(self, filename, prompt):
     self.filename = filename
     self.lock_fp = None
+    self._current_source = None  # Tracks which file is being read, for line source attribution
 
     if os.path.isfile(filename):
       self._open(filename, prompt)
@@ -325,6 +326,17 @@ class KoshDB(dict):
       self.lock_fp.close()
       os.remove(self.lock_fp.name)
 
+  @staticmethod
+  def _get_key_files(db_filename):
+    """Find all *.key files in the same directory as the database."""
+    import glob as glob_module
+    dirpath = os.path.dirname(os.path.abspath(db_filename))
+    pattern = os.path.join(dirpath, '*.key')
+    key_files = sorted(glob_module.glob(pattern))
+    # Don't re-read the main database file if it happens to end in .key
+    abs_db = os.path.abspath(db_filename)
+    return [f for f in key_files if os.path.abspath(f) != abs_db]
+
   def _create(self, filename, prompt):
     msg = 'New Password Database\nEnter passphrase:'
     failmsg = 'Passphrases do not match!\n\n'+msg
@@ -336,7 +348,9 @@ class KoshDB(dict):
     masterKey = _masterKey(passphrase)
     self._masterKeys = [masterKey]
     self._oldEntries = []
-    self._lines = [masterKey]
+    # New databases use split files: master key goes in a separate .key file
+    key_filename = filename + '.key'
+    self._lines = [(masterKey, key_filename)]
     self._write(filename)
 
   def write(self):
@@ -350,50 +364,78 @@ class KoshDB(dict):
 
     entries = copy(self._masterKeys) + list(self.values()) + copy(self._oldEntries)
 
-    dirname = os.path.expanduser(os.path.dirname(filename))
-    if not os.path.exists(dirname):
-      os.makedirs(dirname, mode=0o700)
-    with NamedTemporaryFile(mode='wb', delete=False,
-        prefix=os.path.basename(filename),
-        dir=dirname) as fp:
+    # Group lines by source file, preserving within-file order
+    sources = {}
+    for (line, source) in self._lines:
+      if source not in sources:
+        sources[source] = []
+      sources[source].append(line)
 
-      fp.write(KoshDB.FILE_HEADER)
+    # Ensure the main file is always written (even if it has no entries yet)
+    if filename not in sources:
+      sources[filename] = []
 
-      for line in self._lines:
-        if type(line) == type(b''):
-          fp.write(line)
-        else:
-          fp.write(bytes(line).strip() + b'\n')
-          try:
-            entries.remove(line)
-          except:
-            bug = True
-            fp.write(b"# WARNING: Above entry not found in masterkeys or password entries\n")
+    # Write a temp file for each source
+    temp_names = {}
+    for source, lines in sources.items():
+      source_dirname = os.path.dirname(os.path.abspath(source))
+      if not os.path.exists(source_dirname):
+        os.makedirs(source_dirname, mode=0o700)
+      with NamedTemporaryFile(mode='wb', delete=False,
+          prefix=os.path.basename(source),
+          dir=source_dirname) as fp:
 
-      if entries != []:
-        bug = True
+        fp.write(KoshDB.FILE_HEADER)
+
+        for line in lines:
+          if type(line) == type(b''):
+            fp.write(line)
+          else:
+            fp.write(bytes(line).strip() + b'\n')
+            try:
+              entries.remove(line)
+            except:
+              bug = True
+              fp.write(b"# WARNING: Above entry not found in masterkeys or password entries\n")
+
+        fp.flush()
+        fp.close()
+        temp_names[source] = fp.name
+
+    # Any entries not accounted for by _lines get appended to the main file
+    if entries != []:
+      bug = True
+      with open(temp_names[filename], 'ab') as fp:
         fp.write(b"# WARNING: Below entries not tracked\n")
         for entry in entries:
-          fp.write(str(entry).strip() + b'\n')
+          fp.write(bytes(entry).strip() + b'\n')
         fp.write(b"# WARNING: Above entries not tracked\n")
 
-      fp.flush()
-      # Windows cannot rename open files:
-      fp.close()
-      if hasattr(self, 'fp'): # Won't exist yet if creating the db
-        self.fp.close()
-      if os.path.exists(filename):
-        # Windows cannot rename over the top of another file:
-        if os.path.exists(filename+'~'):
-          os.remove(filename+'~')
-        os.rename(filename, filename+'~')
-      os.rename(fp.name, filename)
+    # Atomically rename temp files to their targets.
+    # Write key files first, main file last (main file holds the lock).
+    for source, temp_name in temp_names.items():
+      if source == filename:
+        continue
+      if os.path.exists(source):
+        if os.path.exists(source + '~'):
+          os.remove(source + '~')
+        os.rename(source, source + '~')
+      os.rename(temp_name, source)
 
-      # Ensure we (still) have the db locked:
-      self._open_and_lock(filename)
+    # Now rename the main file (close existing fp first so Windows can rename it)
+    if hasattr(self, 'fp'):
+      self.fp.close()
+    if os.path.exists(filename):
+      if os.path.exists(filename + '~'):
+        os.remove(filename + '~')
+      os.rename(filename, filename + '~')
+    os.rename(temp_names[filename], filename)
 
-      if bug:
-        raise Bug("Refer to %s for details" % filename)
+    # Ensure we (still) have the db locked:
+    self._open_and_lock(filename)
+
+    if bug:
+      raise Bug("Refer to %s for details" % filename)
 
   def _open_and_lock(self, filename):
     self.fp = open(filename, 'rb+') # Must open for write access for lock to succeed
@@ -423,21 +465,15 @@ class KoshDB(dict):
         except (FileExistsError, PermissionError):
           raise FileLocked()
 
-  def _open(self, filename, prompt):
-    self._open_and_lock(filename)
-    self._readExpect(KoshDB.FILE_HEADER)
-    self._masterKeys = []
-    self._lines = []
-    self._oldEntries = []
-    passphrase = prompt('Enter passphrase:')
-    passphrases = set()
-    passphrases.add(passphrase)
-    for (idx, line) in enumerate(self.fp):
+  def _read_lines_from_fp(self, fp, source, passphrases, prompt):
+    """Read and process all lines from an open file pointer."""
+    self._current_source = source
+    for line in fp:
       if line.startswith(_masterKey.BLOB_PREFIX):
         (key, passphrase) = self._unlockMasterKey(len(self._masterKeys), line, passphrases, prompt)
         self._masterKeys.append(key)
         passphrases.add(passphrase)
-        self._lines.append(key)
+        self._lines.append((key, source))
       elif line.startswith(passEntry.BLOB_PREFIX):
         for key in self._masterKeys:
           try:
@@ -452,7 +488,34 @@ class KoshDB(dict):
           raise ChecksumFailure()
       else:
         # Unrecognised entry - could be a comment, entry encoded by a different key, etc. whatever it is, don't lose it:
-        self._lines.append(line)
+        self._lines.append((line, source))
+    self._current_source = None
+
+  def _open(self, filename, prompt):
+    self._open_and_lock(filename)
+    self._readExpect(KoshDB.FILE_HEADER)
+    self._masterKeys = []
+    self._lines = []
+    self._oldEntries = []
+    passphrase = prompt('Enter passphrase:')
+    passphrases = set()
+    passphrases.add(passphrase)
+
+    # Read *.key files first so that master keys are available when decrypting
+    # password entries in the main database file.
+    for key_filename in self._get_key_files(filename):
+      try:
+        with open(key_filename, 'rb') as kfp:
+          header = kfp.read(len(KoshDB.FILE_HEADER))
+          if header != KoshDB.FILE_HEADER:
+            continue
+          self._read_lines_from_fp(kfp, key_filename, passphrases, prompt)
+      except (IOError, OSError):
+        pass  # Skip unreadable key files
+
+    # Read main database file (master keys here take precedence for newly
+    # added entries, and are needed for single-file legacy databases)
+    self._read_lines_from_fp(self.fp, filename, passphrases, prompt)
 
   def __setitem__(self, name, val):
     assert(name == val.name)
@@ -490,7 +553,9 @@ class KoshDB(dict):
         # Edge case - deleting a non-(yet?)-existant entry
         self._oldEntries.append(val)
       dict.__setitem__(self, name, val)
-    self._lines.append(val)
+    # Track which file this entry belongs to; new entries go to the main db file
+    source = self._current_source if self._current_source is not None else self.filename
+    self._lines.append((val, source))
 
   def __delitem__(self, item):
     n = self[item.name].clone()
