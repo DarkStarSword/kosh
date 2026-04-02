@@ -314,11 +314,15 @@ class passEntry(dict):
 
 class KoshDB(dict):
   FILE_HEADER = b'K05Hv0 UNSTABLE\n'
+  REDIRECT_PREFIX = b'r:'
 
-  def __init__(self, filename, prompt):
+  def __init__(self, filename, prompt, key_files=None, key_file_prompt=None):
     self.filename = filename
     self.lock_fp = None
     self._current_source = None  # Tracks which file is being read, for line source attribution
+    self._explicit_key_files = list(key_files) if key_files else []
+    self._key_file_prompt = key_file_prompt  # optional: (error=None) -> (path, remember)
+    self._unresolved_p_lines = []  # p: lines buffered when no master key was yet available
 
     if os.path.isfile(filename):
       self._open(filename, prompt)
@@ -472,7 +476,7 @@ class KoshDB(dict):
         except (FileExistsError, PermissionError):
           raise FileLocked()
 
-  def _read_lines_from_fp(self, fp, source, passphrases, prompt):
+  def _read_lines_from_fp(self, fp, source, passphrases, prompt, visited):
     """Read and process all lines from an open file pointer."""
     self._current_source = source
     for lineno, line in enumerate(fp):
@@ -491,12 +495,54 @@ class KoshDB(dict):
             self[entry.name] = entry
             break
         else:
-          # Multi user mode may ignore this
-          raise ChecksumFailure()
+          # No key could decrypt this entry yet; buffer it for a second attempt
+          # once all key sources have been loaded (handles split databases where
+          # the key file is discovered after the main db is read, and the
+          # no-key-found interactive prompt).
+          self._unresolved_p_lines.append((line, source))
+      elif line.startswith(self.REDIRECT_PREFIX):
+        # r: lines point to additional key files (e.g. on a USB stick).
+        # They are preserved verbatim and followed immediately.
+        self._lines.append((line, source))
+        redirect_path = line[len(self.REDIRECT_PREFIX):].decode('utf-8', errors='replace').strip()
+        if redirect_path:
+          expanded = os.path.expanduser(redirect_path)
+          abs_path = os.path.abspath(expanded)
+          if abs_path not in visited:
+            self._follow_redirect(expanded, abs_path, passphrases, prompt, visited)
       else:
         # Unrecognised entry - could be a comment, entry encoded by a different key, etc. whatever it is, don't lose it:
         self._lines.append((line, source))
     self._current_source = None
+
+  def _follow_redirect(self, path, abs_path, passphrases, prompt, visited):
+    """Follow an r: redirect to another key file; silently skip if unavailable."""
+    try:
+      with open(path, 'rb') as kfp:
+        header = kfp.read(len(KoshDB.FILE_HEADER))
+        if header == KoshDB.FILE_HEADER:
+          visited.add(abs_path)
+          self._read_lines_from_fp(kfp, path, passphrases, prompt, visited)
+    except (IOError, OSError):
+      pass  # Silently skip (e.g. USB not mounted)
+
+  def _resolve_p_lines(self):
+    """Attempt to decrypt p: lines that were buffered due to no available master key."""
+    remaining = []
+    for (line, source) in self._unresolved_p_lines:
+      for key in self._masterKeys:
+        try:
+          entry = passEntry(key, line)
+        except ChecksumFailure:
+          continue
+        else:
+          self._current_source = source
+          self[entry.name] = entry
+          self._current_source = None
+          break
+      else:
+        remaining.append((line, source))
+    self._unresolved_p_lines = remaining
 
   def _open(self, filename, prompt):
     self._open_and_lock(filename)
@@ -504,25 +550,138 @@ class KoshDB(dict):
     self._masterKeys = []
     self._lines = []
     self._oldEntries = []
+    self._unresolved_p_lines = []
     passphrase = prompt('Enter passphrase:')
     passphrases = set()
     passphrases.add(passphrase)
 
-    # Read *.key files first so that master keys are available when decrypting
-    # password entries in the main database file.
+    # visited tracks files we have already read to prevent infinite redirect loops
+    visited = set()
+    visited.add(os.path.abspath(filename))
+
+    # Read explicitly specified key files first (e.g. from --keyfile CLI argument)
+    for key_filename in self._explicit_key_files:
+      expanded = os.path.expanduser(key_filename)
+      abs_path = os.path.abspath(expanded)
+      if abs_path in visited:
+        continue
+      visited.add(abs_path)
+      try:
+        with open(expanded, 'rb') as kfp:
+          header = kfp.read(len(KoshDB.FILE_HEADER))
+          if header != KoshDB.FILE_HEADER:
+            continue
+          self._read_lines_from_fp(kfp, expanded, passphrases, prompt, visited)
+      except (IOError, OSError):
+        pass
+
+    # Read *.key files found alongside the database (may contain k: entries or r: redirects)
     for key_filename in self._get_key_files(filename):
+      abs_path = os.path.abspath(key_filename)
+      if abs_path in visited:
+        continue
+      visited.add(abs_path)
       try:
         with open(key_filename, 'rb') as kfp:
           header = kfp.read(len(KoshDB.FILE_HEADER))
           if header != KoshDB.FILE_HEADER:
             continue
-          self._read_lines_from_fp(kfp, key_filename, passphrases, prompt)
+          self._read_lines_from_fp(kfp, key_filename, passphrases, prompt, visited)
       except (IOError, OSError):
-        pass  # Skip unreadable key files
+        pass
 
-    # Read main database file (master keys here take precedence for newly
-    # added entries, and are needed for single-file legacy databases)
-    self._read_lines_from_fp(self.fp, filename, passphrases, prompt)
+    # Read main database file. For legacy single-file databases this also contains
+    # the k: master key entry; for split databases it has only p: entries.
+    # Any p: lines that can't be decrypted yet are buffered in _unresolved_p_lines.
+    self._read_lines_from_fp(self.fp, filename, passphrases, prompt, visited)
+
+    # If no master key was found in any scanned file, ask the user where to find one.
+    # This handles cases such as the key file being on a USB stick, a network share,
+    # or any path that isn't auto-discovered by the *.key glob.
+    if not self._masterKeys:
+      self._request_key_file(filename, passphrases, prompt, visited)
+
+    # Retry any p: entries that couldn't be decrypted before a master key was available.
+    if self._unresolved_p_lines:
+      if self._masterKeys:
+        self._resolve_p_lines()
+      if self._unresolved_p_lines:
+        raise ChecksumFailure()
+
+  def _request_key_file(self, db_filename, passphrases, prompt, visited):
+    """Prompt the user for a key file when none was found automatically."""
+    error = None
+    while not self._masterKeys:
+      if self._key_file_prompt is not None:
+        result = self._key_file_prompt(error=error)
+      else:
+        msg = 'No master key found.\nEnter path to key file\n(leave empty to cancel):'
+        if error:
+          msg = error + '\n\n' + msg
+        path = prompt(msg)
+        result = (path.strip(), False) if path and path.strip() else None
+
+      if not result or not result[0]:
+        return  # User cancelled
+
+      (path, remember) = result
+      expanded = os.path.expanduser(path)
+      abs_path = os.path.abspath(expanded)
+
+      if abs_path in visited:
+        error = 'Already loaded: ' + expanded
+        continue
+
+      try:
+        with open(expanded, 'rb') as kfp:
+          header = kfp.read(len(KoshDB.FILE_HEADER))
+          if header != KoshDB.FILE_HEADER:
+            error = 'Not a valid kosh key file:\n' + expanded
+            continue
+          visited.add(abs_path)
+          self._read_lines_from_fp(kfp, expanded, passphrases, prompt, visited)
+      except (IOError, OSError) as e:
+        error = 'Could not open %s:\n%s' % (expanded, e)
+        continue
+
+      if not self._masterKeys:
+        error = 'No master key found in:\n' + expanded
+        continue
+
+      if remember:
+        self._save_redirect(db_filename, path)
+
+  def _save_redirect(self, db_filename, key_path):
+    """Store an r: redirect in the database key file for future auto-discovery."""
+    key_filename = db_filename + '.key'
+    redirect_line = (self.REDIRECT_PREFIX.decode() + key_path.strip() + '\n').encode('utf-8')
+    self._lines.append((redirect_line, key_filename))
+    # Write immediately so the redirect persists even if the user makes no other changes.
+    self._write_key_file(key_filename)
+
+  def _write_key_file(self, key_filename):
+    """Write one key file to disk immediately (used during startup, bypasses normal write path)."""
+    from tempfile import NamedTemporaryFile
+    dirname = os.path.dirname(os.path.abspath(key_filename))
+    if not os.path.exists(dirname):
+      os.makedirs(dirname, mode=0o700)
+    lines_for_file = [item for (item, src) in self._lines if src == key_filename]
+    with NamedTemporaryFile(mode='wb', delete=False,
+        prefix=os.path.basename(key_filename),
+        dir=dirname) as tmp:
+      tmp.write(KoshDB.FILE_HEADER)
+      for line in lines_for_file:
+        if isinstance(line, bytes):
+          tmp.write(line)
+        else:
+          tmp.write(bytes(line).strip() + b'\n')
+      tmp.flush()
+      tmp.close()
+    if os.path.exists(key_filename):
+      if os.path.exists(key_filename + '~'):
+        os.remove(key_filename + '~')
+      os.rename(key_filename, key_filename + '~')
+    os.rename(tmp.name, key_filename)
 
   def __setitem__(self, name, val):
     assert(name == val.name)

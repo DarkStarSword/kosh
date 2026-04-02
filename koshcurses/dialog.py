@@ -112,6 +112,50 @@ class QRDialog(urwid.ListBox):
     overlay = urwid.Overlay(self, parent, 'center', self.width, 'middle', self.height)
     urwid.MainLoop(overlay, palette).run()
 
+class KeyFileDialog(urwid.WidgetWrap):
+  """
+  Dialog prompting the user to locate a key file when none was found automatically.
+  showModal(error=None) returns (path, remember_bool), or ('', False) if cancelled.
+  The widget is reused across retries so the path field preserves what was typed.
+  """
+  WIDTH = 54
+
+  def __init__(self):
+    self.path_edit = widgets.koshEdit('Path: ')
+    self.remember_checkbox = urwid.CheckBox('Remember in key file (r: redirect)')
+    # Build a placeholder widget; real content is set in showModal
+    urwid.WidgetWrap.__init__(self, urwid.SolidFill())
+
+  def _build(self, error=None):
+    message = error if error else 'No master key found.\nEnter the path to a key file:'
+    content = [
+      urwid.Text(message, align='center'),
+      urwid.Divider('-'),
+      self.path_edit,
+      self.remember_checkbox,
+      urwid.Divider(),
+      urwid.Text('Enter to confirm  Esc to cancel', align='center'),
+    ]
+    height = message.count('\n') + len(content) + 2  # +2 for LineBox border
+    self._w = urwid.LineBox(urwid.ListBox(content))
+    return height
+
+  def showModal(self, error=None):
+    height = self._build(error)
+    self.confirmed = False
+    parent = urwid.SolidFill()
+    overlay = urwid.Overlay(self, parent, 'center', self.WIDTH, 'middle', height)
+    def exit_on_input(key):
+      if key == 'enter':
+        self.confirmed = True
+        raise urwid.ExitMainLoop()
+      elif key == 'esc':
+        raise urwid.ExitMainLoop()
+    urwid.MainLoop(overlay, unhandled_input=exit_on_input).run()
+    if self.confirmed and self.path_edit.get_edit_text().strip():
+      return (self.path_edit.get_edit_text().strip(), self.remember_checkbox.get_state())
+    return ('', False)
+
 if __name__=='__main__':
   d = inputDialog(message='Enter master password:', width=30)
   print(d.showModal())

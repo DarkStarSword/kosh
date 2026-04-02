@@ -73,21 +73,20 @@ import koshcurses.dialog
 import koshcurses.ui
 
 def getParameters():
-  import optparse
-  usage = 'usage: %prog [passdb]'
-  parser = optparse.OptionParser(usage=usage, version="%%prog %s" % __version__)
-  # No non positional options just yet...
-  (options, args) = parser.parse_args()
-
-  # argparse from python2.7 would be nice, but I need to support older versions for now
-  if len(args):
-    options.passdb = args.pop(0)
-  else:
-    options.passdb = passdb_default
-
-  if len(args):
-    parser.error('Too many arguments')
-  return options
+  import argparse
+  parser = argparse.ArgumentParser(
+    prog='kosh',
+    description='Kosh password manager',
+  )
+  parser.add_argument('passdb', nargs='?', default=passdb_default,
+                      metavar='PASSDB',
+                      help='Path to password database (default: %(default)s)')
+  parser.add_argument('--keyfile', '-k', action='append', default=[],
+                      metavar='FILE', dest='keyfiles',
+                      help='Additional key file to load (may be repeated)')
+  parser.add_argument('--version', '-V', action='version',
+                      version='%%(prog)s %s' % __version__)
+  return parser.parse_args()
 
 @handleErr(koshcurses.err.showErr)
 def main():
@@ -96,8 +95,13 @@ def main():
   def prompt(message):
     dialog = koshcurses.dialog.inputDialog(message=message)
     return dialog.showModal()
+  key_file_dialog = koshcurses.dialog.KeyFileDialog()
+  def key_file_prompt(error=None):
+    return key_file_dialog.showModal(error=error)
   try:
-    db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt)
+    db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt,
+                       key_files=options.keyfiles,
+                       key_file_prompt=key_file_prompt)
     u = koshcurses.ui.koshUI(db)
     u.showModal()
   except koshdb.koshdb.FileLocked:

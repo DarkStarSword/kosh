@@ -44,6 +44,8 @@ def handleErr(callback, ignoreKeyboardInterrupt = True):
         import traceback, sys
         if ignoreKeyboardInterrupt and sys.exc_info()[0] == KeyboardInterrupt:
           return
+        if sys.exc_info()[0] == SystemExit:
+          raise
         callback(traceback.format_exc())
     return wrap2
   return wrap1
