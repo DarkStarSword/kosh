@@ -58,6 +58,8 @@ class viCommandBar(urwid.WidgetWrap):
 
   def __init__(self, body, search_function=None):
     self._search_function = search_function
+    # Make an instance copy so register_command() doesn't mutate the class dict
+    self.COMMANDS = dict(viCommandBar.COMMANDS)
 
     self.defaults()
     self._status = urwid.Text('')
@@ -138,6 +140,13 @@ class viCommandBar(urwid.WidgetWrap):
       self.normal_mode()
       return None
 
+  def register_command(self, name, callback):
+    """Register a command accessible via :name in the command bar.
+    callback(args) receives the argument string (or None if no arguments given).
+    If callback has a docstring its first line is shown in :help.
+    """
+    self.COMMANDS[name] = callback
+
   def exec_command(self):
     args = self._status.get_edit_text().split(None, 1)
     self.normal_mode()
@@ -145,7 +154,11 @@ class viCommandBar(urwid.WidgetWrap):
       return
     (command,args) = (args[0], args[1] if len(args) > 1 else None)
     if command in self.COMMANDS:
-      getattr(self, self.COMMANDS[command])(args)
+      handler = self.COMMANDS[command]
+      if callable(handler):
+        handler(args)
+      else:
+        getattr(self, handler)(args)
     else:
       self.update_status('Unknown command: '+command)
 
@@ -182,7 +195,12 @@ class viCommandBar(urwid.WidgetWrap):
 
     contents = [urwid.Text('Commands:')]
     for command in self.COMMANDS:
-      contents += [urwid.Text('  :%s - %s'%(command, self.COMMANDS[command]))]
+      handler = self.COMMANDS[command]
+      if callable(handler):
+        desc = handler.__doc__.strip().split('\n')[0] if handler.__doc__ else command
+      else:
+        desc = handler
+      contents += [urwid.Text('  :%s - %s' % (command, desc))]
     for mode in self.KEYMAP:
       contents += [urwid.Divider(),urwid.Text('%s mode:'%mode)]
       for key in self.KEYMAP[mode]:

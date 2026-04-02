@@ -153,6 +153,13 @@ class _masterKey(object):
     e = a.encrypt(key + checksum)
     return base64.encodebytes(e+s).replace(b'\n',b'')
 
+  def reencrypt(self, new_passphrase):
+    """Create a new _masterKey encrypting the same underlying key with a new passphrase."""
+    new_mk = _masterKey.__new__(_masterKey)
+    new_mk._key = self._key  # __setattr__ calls expire() on new_mk first (no-op on fresh object)
+    new_mk._blob = _masterKey._encMasterKey(self._key, new_passphrase)
+    return new_mk
+
   @staticmethod
   def _decMasterKey(blob, passphrase):
     d = base64.decodebytes(blob)
@@ -594,8 +601,14 @@ class KoshDB(dict):
     if (r != expect):
       raise Exception("Unrecognised file header")
 
-  def _changeMasterPass(self, oldpass, newpass):
-    raise Exception('unimplemented')
+  def change_passphrase(self, new_passphrase):
+    """Re-encrypt all master keys with a new passphrase, preserving their source files."""
+    new_keys = [key.reencrypt(new_passphrase) for key in self._masterKeys]
+    key_map = {id(old): new for old, new in zip(self._masterKeys, new_keys)}
+    self._lines = [(key_map.get(id(item), item), src) for (item, src) in self._lines]
+    for key in self._masterKeys:
+      key.expire()
+    self._masterKeys = new_keys
 
   def importEntry(self, entry):
     newE = passEntry(self._masterKeys[0])

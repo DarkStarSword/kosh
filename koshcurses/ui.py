@@ -639,6 +639,8 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
       self.pwEntry
       ] )
     self.vi = widgets.viCommandBar(self.container, search_function=self.pwList.search)
+    self.vi.register_command('splitkey', self.cmd_splitkey)
+    self.vi.register_command('passwd', self.cmd_passwd)
     urwid.WidgetWrap.__init__(self, self.vi)
     self.touch()
     self.init_clipboard()
@@ -744,4 +746,52 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
       self.ui.status("Error intialising clipboard support: %s" % str(e));
       clipboard = None
     self.clipboard = clipboard
+
+  def cmd_splitkey(self, args):
+    """Move master key(s) from the main database into a separate .key file"""
+    import koshdb.koshdb as koshdb_mod
+    key_filename = self.db.filename + '.key'
+
+    keys_in_main = [(item, src) for (item, src) in self.db._lines
+                    if isinstance(item, koshdb_mod._masterKey)
+                    and src == self.db.filename]
+    if not keys_in_main:
+      self.status('Master key is already in a separate file')
+      return
+
+    dlg = dialog.YesNoDialog(
+        message='Move master key(s) to:\n%s\n\nThe main database will no longer\ncontain the master key.' % key_filename)
+    self.mainloop.stop()
+    response = dlg.showModal()
+    self.mainloop.start()
+    if not response:
+      self.status('Cancelled')
+      return
+
+    self.db._lines = [
+        (item, key_filename if isinstance(item, koshdb_mod._masterKey) and src == self.db.filename else src)
+        for (item, src) in self.db._lines
+    ]
+    self.db.write()
+    self.status('Master key moved to ' + key_filename)
+
+  def cmd_passwd(self, args):
+    """Change the master passphrase used to protect the database key"""
+    dlg1 = dialog.inputDialog(message='Change master passphrase\nEnter new passphrase:', width=42)
+    dlg2 = dialog.inputDialog(message='Change master passphrase\nConfirm new passphrase:', width=42)
+    self.mainloop.stop()
+    new_pass = dlg1.showModal()
+    confirm = dlg2.showModal()
+    self.mainloop.start()
+
+    if not new_pass:
+      self.status('Passphrase change cancelled (empty passphrase not allowed)')
+      return
+    if new_pass != confirm:
+      self.status('Passphrases do not match, passphrase not changed')
+      return
+
+    self.db.change_passphrase(new_pass)
+    self.db.write()
+    self.status('Master passphrase changed')
 
