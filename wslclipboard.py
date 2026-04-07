@@ -19,7 +19,7 @@ import time
 # python.exe - may point to either python 2 or 3, or a stub that will try to install python from Windows Store
 # py.exe - launcher designed to resolve these kind of issues, but may not be installed (e.g. Windows store version does NOT install it), so can't rely on it
 # 2026-04-07: Started getting a FileNotFoundError on python3.exe, not sure what changed (update?). Added fallback
-native_python_exe = "python3.exe"
+native_python_exe = None
 
 # If winclipboard.py takes longer than this to respond, warn that Windows
 # Defender might be slowing things down. Typical times are about 0.15 seconds:
@@ -71,6 +71,7 @@ class WSLClipboardProxy(object):
 def init(ui):
   global proxy
   try:
+    try_native_python_exe_fallback()
     proxy = WSLClipboardProxy(ui)
   except Exception as e:
     proxy = None
@@ -178,6 +179,34 @@ def attempt_install_winstore_python():
   # the alias is enabled in settings -> Manage App Execution Aliases
   subprocess.run("python.exe")
 
+def try_native_python_exe_fallback():
+  # 2026-04-07: Started getting a FileNotFoundError on python3.exe, not sure
+  # what changed (update?). Try both to see if either is available:
+  global native_python_exe
+  if native_python_exe is not None:
+    return
+  try:
+    try_native_python_exe = "python3.exe"
+    native_python = subprocess.run((try_native_python_exe, "--version"), capture_output=True)
+  except FileNotFoundError:
+    # Try python.exe if python3.exe is missing
+    try_native_python_exe = "python.exe"
+    native_python = subprocess.run((try_native_python_exe, "--version"), capture_output=True)
+
+  if native_python.returncode != 0:
+    # Non-zero return code signifies this is a Windows Store stub, which is not usable
+    raise ChildProcessError("%s is Windows Store stub" % try_native_python_exe)
+
+  if not native_python.stdout.startswith(b'Python '):
+    raise ChildProcessError("Unexpected output from %s: %s" % (try_native_python_exe, native_python.stdout))
+
+  native_python_version = tuple(map(int, native_python.stdout[7:].split(b'.')))
+  if native_python_version < (3,):
+    raise ChildProcessError("Native %s too old: %s" % (try_native_python_exe, native_python.stdout))
+
+  # Success, found usable native python:
+  native_python_exe = try_native_python_exe
+
 def get_clipboard_qrcode():
   winpython = subprocess.run([native_python_exe, "winclipboard.py", "--get-qrcode"],
       cwd=os.path.dirname(os.path.realpath(sys.argv[0])),
@@ -186,6 +215,7 @@ def get_clipboard_qrcode():
     return winpython.stdout.decode('ascii').strip()
 
 def check_qrcode_requirements():
+  try_native_python_exe_fallback()
   exit_code = subprocess.call([native_python_exe, "winclipboard.py", "--check-qrcode-requirements"],
       cwd=os.path.dirname(os.path.realpath(sys.argv[0])))
   return exit_code == 0
