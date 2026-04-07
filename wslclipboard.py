@@ -18,6 +18,7 @@ import time
 # python3.exe - should run python3.x if installed. Need to check what this does if python isn't installed - is it a stub like python.exe or does it just not exist?
 # python.exe - may point to either python 2 or 3, or a stub that will try to install python from Windows Store
 # py.exe - launcher designed to resolve these kind of issues, but may not be installed (e.g. Windows store version does NOT install it), so can't rely on it
+# 2026-04-07: Started getting a FileNotFoundError on python3.exe, not sure what changed (update?). Added fallback
 native_python_exe = "python3.exe"
 
 # If winclipboard.py takes longer than this to respond, warn that Windows
@@ -69,7 +70,11 @@ class WSLClipboardProxy(object):
 
 def init(ui):
   global proxy
-  proxy = WSLClipboardProxy(ui)
+  try:
+    proxy = WSLClipboardProxy(ui)
+  except Exception as e:
+    proxy = None
+    ui.status('Error starting WSL clipboard proxy, only basic clipboard integration available:\n    %s: %s' % (e.__class__.__name__, str(e)))
 
 def copy_text_simple(blob):
   text = str(blob).encode('utf8') # blob may be utf8
@@ -147,6 +152,8 @@ def sendViaClipboardSimple(blobs, record = None, ui=ui_null()):
   empty_clipboard(ui)
 
 def sendViaClipboard(blobs, record = None, ui=ui_null()):
+  if proxy is None:
+    return sendViaClipboardSimple(blobs, record, ui)
   ui.status('')
   for (field, blob) in blobs:
     proxy.queue(blob, field, record)

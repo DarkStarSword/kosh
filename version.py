@@ -131,7 +131,13 @@ def check_qrcode_import():
   if not hasattr(clipboard, 'check_qrcode_requirements'):
     # Not implemented, not applicable
     return
-  if clipboard.check_qrcode_requirements():
+  try:
+    if clipboard.check_qrcode_requirements():
+      return
+  except Exception as e:
+    import time
+    print('QR code import unavailable due to %s: %s' % (e.__class__.__name__, str(e)))
+    time.sleep(1)
     return
   answer = None
   while answer not in ('y', 'n'):

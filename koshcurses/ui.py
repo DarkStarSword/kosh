@@ -335,10 +335,13 @@ class passwordForm(widgets.keymapwid, urwid.WidgetWrap):
     self.fields = [ widgets.passwordEdit(x+": ", entry[x], revealable=True) for x in entry ]
     self.newfield = widgets.koshEdit('Add new field: ')
     self.import_qr = widgets.koshEdit('Import QR Code from clipboard: ', edit_text='2FA')
-    if not hasattr(self.ui.clipboard, 'get_clipboard_qrcode'):
-      self.import_qr = urwid.Text('QR Code import not implemented')
-    elif not self.ui.clipboard.check_qrcode_requirements():
-      self.import_qr = urwid.Text('QR Code import missing PIL/pyzbar')
+    try:
+      if not hasattr(self.ui.clipboard, 'get_clipboard_qrcode'):
+        self.import_qr = urwid.Text('QR Code import not implemented')
+      elif not self.ui.clipboard.check_qrcode_requirements():
+        self.import_qr = urwid.Text('QR Code import missing PIL/pyzbar')
+    except Exception as e:
+        self.import_qr = urwid.Text('QR Code import unavailable due to %s' % e.__class__.__name__)
     self.record_http_script = widgets.koshEdit('Record HTTP password change script: ')
     self.edit_clip_order = urwid.CheckBox('Edit clipboard order', 'CopyFieldOrder' in entry.meta)
     urwid.connect_signal(self.edit_clip_order, 'postchange', self.on_edit_clip_order_change)
