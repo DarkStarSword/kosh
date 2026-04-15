@@ -781,15 +781,24 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
   def cmd_passwd(self, args):
     """Change the master passphrase used to protect the database key"""
     import koshdb.koshdb as koshdb_mod
-    key_sources = {src for (item, src) in self.db._lines if isinstance(item, koshdb_mod._masterKey)}
-    readonly_key_sources = key_sources & self.db._readonly_sources
-    if readonly_key_sources:
-      self.status('Cannot change passphrase: master key is in a read-only source '
-                  '(Windows path):\n' + '\n'.join(sorted(readonly_key_sources)))
+    writable_sources = sorted({src for (item, src) in self.db._lines
+                                if isinstance(item, koshdb_mod._masterKey)
+                                and src not in self.db._readonly_sources})
+    readonly_sources = sorted({src for (item, src) in self.db._lines
+                                if isinstance(item, koshdb_mod._masterKey)
+                                and src in self.db._readonly_sources})
+    if not writable_sources:
+      self.status('Cannot change passphrase: all master keys are in read-only sources '
+                  '(Windows paths):\n' + '\n'.join(readonly_sources))
       return
 
-    dlg1 = dialog.inputDialog(message='Change master passphrase\nEnter new passphrase:', width=42)
-    dlg2 = dialog.inputDialog(message='Change master passphrase\nConfirm new passphrase:', width=42)
+    source_list = '\n'.join(writable_sources)
+    dlg1 = dialog.inputDialog(
+        message='Change master passphrase for:\n%s\n\nEnter new passphrase:' % source_list,
+        width=max(42, max(len(s) for s in writable_sources) + 6))
+    dlg2 = dialog.inputDialog(
+        message='Change master passphrase for:\n%s\n\nConfirm new passphrase:' % source_list,
+        width=max(42, max(len(s) for s in writable_sources) + 6))
     self.mainloop.stop()
     new_pass = dlg1.showModal()
     confirm = dlg2.showModal()

@@ -274,6 +274,31 @@ class UnlockDialog(urwid.WidgetWrap):
       return 2  # Columns widget whose Text contains one '\n'
     return 1    # unknown fallback
 
+  def _compute_height(self):
+    """Count display rows consumed by current walker contents."""
+    h = 2   # LineBox top + bottom borders
+    for w in self._walker:
+      if isinstance(w, urwid.Columns):
+        # Unavailable source rows embed multi-line Text in the first column.
+        try:
+          first_w = w.contents[0][0]
+          if isinstance(first_w, urwid.Text):
+            text, _ = first_w.get_text()
+            h += text.count('\n') + 1
+            continue
+        except (IndexError, AttributeError):
+          pass
+      h += 1
+    return h
+
+  def _refresh_overlay(self):
+    """Resize the overlay to fit current walker contents."""
+    if not hasattr(self, '_loop'):
+      return
+    h = min(self._compute_height(), 40)
+    self._loop.widget = urwid.Overlay(self, self._parent, 'center',
+                                      self.WIDTH, 'middle', h)
+
   def _passphrase_rows(self, ks):
     edit = widgets.passwordEdit('')
     edit._key_source = ks
@@ -322,6 +347,7 @@ class UnlockDialog(urwid.WidgetWrap):
       insert_rows.extend(self._source_rows(ns))
     if insert_rows:
       self._walker[insert_at:insert_at] = insert_rows
+    self._refresh_overlay()
 
   def _on_retry(self, button, ks):
     """Re-scan an unavailable source; replace its row on success."""
@@ -334,6 +360,7 @@ class UnlockDialog(urwid.WidgetWrap):
     for ns in new_sources:
       new_rows.extend(self._source_rows(ns))
     self._walker[idx:idx+1] = new_rows or [ks._retry_widget]  # restore if still unavailable
+    self._refresh_overlay()
 
   def _on_unlock(self, button):
     """Try to unlock with all filled-in passphrases."""
@@ -397,11 +424,13 @@ class UnlockDialog(urwid.WidgetWrap):
   def showModal(self, parent=None):
     if parent is None:
       parent = urwid.SolidFill()
+    self._parent = parent
     height = min(self._height, 40)
     overlay = urwid.Overlay(self, parent, 'center', self.WIDTH,
                             'middle', height)
     palette = [('error', 'dark red', '')]
-    urwid.MainLoop(overlay, palette=palette).run()
+    self._loop = urwid.MainLoop(overlay, palette=palette)
+    self._loop.run()
     if self._quit_requested:
       raise SystemExit(0)
     return self._result

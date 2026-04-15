@@ -1014,21 +1014,27 @@ class KoshDB(dict):
       raise Exception("Unrecognised file header")
 
   def change_passphrase(self, new_passphrase):
-    """Re-encrypt all master keys with a new passphrase, preserving their source files."""
-    # Find which sources hold master key objects
-    key_sources = {src for (item, src) in self._lines if isinstance(item, _masterKey)}
-    readonly_key_sources = key_sources & self._readonly_sources
-    if readonly_key_sources:
+    """Re-encrypt writable master keys with a new passphrase.
+
+    Keys in read-only sources (e.g. Windows paths accessed from WSL2) are
+    left unchanged.  Raises ReadOnlySourceError if there are no writable keys.
+    """
+    writable_keys = [item for (item, src) in self._lines
+                     if isinstance(item, _masterKey)
+                     and src not in self._readonly_sources]
+    if not writable_keys:
+      readonly_sources = {src for (item, src) in self._lines
+                          if isinstance(item, _masterKey)}
       raise ReadOnlySourceError(
-        'Cannot change passphrase: master key is in a read-only source '
-        '(Windows path):\n' + '\n'.join(sorted(readonly_key_sources))
+        'Cannot change passphrase: all master keys are in read-only sources '
+        '(Windows paths):\n' + '\n'.join(sorted(readonly_sources))
       )
-    new_keys = [key.reencrypt(new_passphrase) for key in self._masterKeys]
-    key_map = {id(old): new for old, new in zip(self._masterKeys, new_keys)}
+    new_keys = [key.reencrypt(new_passphrase) for key in writable_keys]
+    key_map = {id(old): new for old, new in zip(writable_keys, new_keys)}
     self._lines = [(key_map.get(id(item), item), src) for (item, src) in self._lines]
-    for key in self._masterKeys:
+    for key in writable_keys:
       key.expire()
-    self._masterKeys = new_keys
+    self._masterKeys = [key_map.get(id(k), k) for k in self._masterKeys]
 
   def importEntry(self, entry):
     newE = passEntry(self._masterKeys[0])
