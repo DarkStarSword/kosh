@@ -780,6 +780,14 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
 
   def cmd_passwd(self, args):
     """Change the master passphrase used to protect the database key"""
+    import koshdb.koshdb as koshdb_mod
+    key_sources = {src for (item, src) in self.db._lines if isinstance(item, koshdb_mod._masterKey)}
+    readonly_key_sources = key_sources & self.db._readonly_sources
+    if readonly_key_sources:
+      self.status('Cannot change passphrase: master key is in a read-only source '
+                  '(Windows path):\n' + '\n'.join(sorted(readonly_key_sources)))
+      return
+
     dlg1 = dialog.inputDialog(message='Change master passphrase\nEnter new passphrase:', width=42)
     dlg2 = dialog.inputDialog(message='Change master passphrase\nConfirm new passphrase:', width=42)
     self.mainloop.stop()
@@ -794,12 +802,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
       self.status('Passphrases do not match, passphrase not changed')
       return
 
-    import koshdb.koshdb as koshdb_mod
-    try:
-      self.db.change_passphrase(new_pass)
-    except koshdb_mod.ReadOnlySourceError as e:
-      self.status(str(e))
-      return
+    self.db.change_passphrase(new_pass)
     self.db.write()
     self.status('Master passphrase changed')
 
