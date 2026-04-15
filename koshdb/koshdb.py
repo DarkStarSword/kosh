@@ -717,8 +717,8 @@ class KoshDB(dict):
         self._save_redirect(db_filename, path)
 
   def _save_redirect(self, db_filename, key_path):
-    """Store an r: redirect in the database key file for future auto-discovery."""
-    key_filename = db_filename + '.key'
+    """Store an r: redirect in a -redir.key file for future auto-discovery."""
+    key_filename = db_filename + '-redir.key'
     redirect_line = (self.REDIRECT_PREFIX.decode() + key_path.strip() + '\n').encode('utf-8')
     self._lines.append((redirect_line, key_filename))
     # Write immediately so the redirect persists even if the user makes no other changes.
