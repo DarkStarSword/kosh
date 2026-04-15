@@ -313,16 +313,48 @@ class passEntry(dict):
 
     return sortedGen(self, order)
 
+class KeySource:
+  """
+  Represents a potential key source discovered during a database scan.
+
+  Designed to be extensible for future key types beyond passphrase
+  (e.g. FIDO2/hardware tokens).  The source_type field indicates what
+  kind of credential is needed to unlock this source.
+  """
+  TYPE_PASSPHRASE  = 'passphrase'   # standard k: blob, unlocked with a passphrase string
+  TYPE_UNAVAILABLE = 'unavailable'  # redirect target that could not be read
+
+  def __init__(self, source_type, source_file, blob=None, lineno=0, error=None):
+    self.source_type = source_type
+    self.source_file  = source_file  # the file this was found in
+    self.blob    = blob     # raw k: line bytes  (TYPE_PASSPHRASE only)
+    self.lineno  = lineno   # line number within source_file
+    self.error   = error    # human-readable error (TYPE_UNAVAILABLE only)
+
+  def try_unlock(self, credential):
+    """
+    Attempt to decrypt the key blob using the provided credential.
+    For TYPE_PASSPHRASE, credential is a passphrase string.
+    Returns a _masterKey object on success.
+    Raises ChecksumFailure if the credential is wrong.
+    """
+    if self.source_type == self.TYPE_PASSPHRASE:
+      return _masterKey(credential, self.blob)
+    raise ValueError('Cannot unlock key source of type %r' % self.source_type)
+
+
 class KoshDB(dict):
   FILE_HEADER = b'K05Hv0 UNSTABLE\n'
   REDIRECT_PREFIX = b'r:'
 
-  def __init__(self, filename, prompt, key_files=None, key_file_prompt=None):
+  def __init__(self, filename, prompt, key_files=None, key_file_prompt=None,
+               unlock_prompt=None):
     self.filename = filename
     self.lock_fp = None
     self._current_source = None  # Tracks which file is being read, for line source attribution
     self._explicit_key_files = list(key_files) if key_files else []
     self._key_file_prompt = key_file_prompt  # optional: (error=None) -> (path, remember)
+    self._unlock_prompt = unlock_prompt  # optional: new unified unlock dialog
     self._unresolved_p_lines = []  # p: lines buffered when no master key was yet available
     self._readonly_sources = set()  # sources that must not be written back (e.g. Windows paths)
 
@@ -490,6 +522,77 @@ class KoshDB(dict):
         except (FileExistsError, PermissionError):
           raise FileLocked()
 
+  # -------------------------------------------------------------------------
+  # Key-source scanning (no passphrase/decryption; just discovers k: blobs)
+  # -------------------------------------------------------------------------
+
+  def _scan_fp_for_key_sources(self, fp, source, visited):
+    """Scan lines from a file-like object, collecting KeySource descriptors."""
+    sources = []
+    for lineno, line in enumerate(fp):
+      if line.startswith(_masterKey.BLOB_PREFIX):
+        sources.append(KeySource(KeySource.TYPE_PASSPHRASE, source,
+                                 blob=line, lineno=lineno))
+      elif line.startswith(self.REDIRECT_PREFIX):
+        redirect_path = line[len(self.REDIRECT_PREFIX):].decode('utf-8', errors='replace').strip()
+        if redirect_path:
+          expanded = os.path.expanduser(redirect_path)
+          abs_path  = os.path.abspath(expanded)
+          if abs_path not in visited:
+            visited.add(abs_path)
+            sources.extend(self.scan_key_file(expanded, visited))
+    return sources
+
+  def scan_key_file(self, path, visited=None):
+    """
+    Scan a single key file and return a list of KeySource descriptors.
+    Public so the unlock dialog can call it when the user adds a file path.
+    visited: set of already-scanned abs paths for cycle prevention.
+    """
+    import io
+    if visited is None:
+      visited = set()
+    (data, error) = self._try_read_file(path)
+    if data is None:
+      return [KeySource(KeySource.TYPE_UNAVAILABLE, path, error=error)]
+    header_len = len(KoshDB.FILE_HEADER)
+    if data[:header_len] != KoshDB.FILE_HEADER:
+      return [KeySource(KeySource.TYPE_UNAVAILABLE, path,
+                        error='Not a valid kosh key file')]
+    return self._scan_fp_for_key_sources(io.BytesIO(data[header_len:]), path, visited)
+
+  def _scan_key_sources(self, filename):
+    """
+    Scan all auto-discovered key file locations for KeySource descriptors.
+    Returns (key_sources, visited_set).  Leaves self.fp positioned just
+    after the file header, ready for the full read phase.
+    """
+    key_sources = []
+    visited = set()
+    visited.add(os.path.abspath(filename))
+
+    for kf in self._explicit_key_files:
+      expanded = os.path.expanduser(kf)
+      abs_path  = os.path.abspath(expanded)
+      if abs_path not in visited:
+        visited.add(abs_path)
+        key_sources.extend(self.scan_key_file(expanded, visited))
+
+    for kf in self._get_key_files(filename):
+      abs_path = os.path.abspath(kf)
+      if abs_path not in visited:
+        visited.add(abs_path)
+        key_sources.extend(self.scan_key_file(kf, visited))
+
+    # Scan main db for k: entries (legacy single-file databases store k: here)
+    self.fp.seek(len(KoshDB.FILE_HEADER))
+    key_sources.extend(self._scan_fp_for_key_sources(self.fp, filename, visited))
+    self.fp.seek(len(KoshDB.FILE_HEADER))  # reset for full read phase
+
+    return key_sources, visited
+
+  # -------------------------------------------------------------------------
+
   def _read_lines_from_fp(self, fp, source, passphrases, prompt, visited):
     """Read and process all lines from an open file pointer."""
     self._current_source = source
@@ -614,15 +717,105 @@ class KoshDB(dict):
     self._oldEntries = []
     self._unresolved_p_lines = []
     self._readonly_sources = set()
+
+    if self._unlock_prompt is not None:
+      self._open_with_unlock_dialog(filename, prompt)
+    else:
+      self._open_legacy(filename, prompt)
+
+  def _open_with_unlock_dialog(self, filename, prompt):
+    """
+    New open flow: scan key sources, show unified unlock dialog, full read.
+    """
+    # Phase 1 — scan all known key file locations; no passphrase required.
+    (key_sources, _scan_visited) = self._scan_key_sources(filename)
+
+    # Phase 2 — show unlock dialog; loop until at least one key is unlocked
+    # or the user cancels.  The dialog validates credentials itself via
+    # KeySource.try_unlock() and only returns once at least one succeeds.
+    passphrases = set()
+    extra_key_files = []   # user-added paths not saved as redirects
+
+    result = self._unlock_prompt(key_sources, self.scan_key_file)
+    if result is None:
+      return  # user cancelled
+
+    (unlock_pairs, added_files) = result
+
+    # Collect validated passphrases so the full-read phase can decrypt
+    # k: entries without re-prompting.
+    for (ks, credential) in unlock_pairs:
+      passphrases.add(credential)
+
+    # Save any requested redirects BEFORE the full read so that
+    # _get_key_files picks up the new <db>-redir.key file.
+    for (path, remember) in added_files:
+      expanded = os.path.expanduser(path)
+      if self._is_windows_path(expanded):
+        self._readonly_sources.add(expanded)
+      if remember:
+        self._save_redirect(filename, path)
+      else:
+        extra_key_files.append(expanded)
+
+    # Phase 3 — full read: populate _lines, _masterKeys, passEntries.
+    # Use a fresh visited set so all files are read into _lines.
+    visited = set()
+    visited.add(os.path.abspath(filename))
+
+    # Read explicit (--keyfile) and user-added files via _try_read_file so that
+    # Windows paths (possible for user-added files) work via the cmd.exe fallback.
+    import io as _io
+    for key_filename in self._explicit_key_files + extra_key_files:
+      expanded = os.path.expanduser(key_filename)
+      abs_path = os.path.abspath(expanded)
+      if abs_path in visited:
+        continue
+      visited.add(abs_path)
+      (data, _err) = self._try_read_file(expanded)
+      if data is None:
+        continue
+      header_len = len(KoshDB.FILE_HEADER)
+      if data[:header_len] != KoshDB.FILE_HEADER:
+        continue
+      if self._is_windows_path(expanded):
+        self._readonly_sources.add(expanded)
+      self._read_lines_from_fp(_io.BytesIO(data[header_len:]), expanded, passphrases, prompt, visited)
+
+    for key_filename in self._get_key_files(filename):
+      abs_path = os.path.abspath(key_filename)
+      if abs_path in visited:
+        continue
+      visited.add(abs_path)
+      try:
+        with open(key_filename, 'rb') as kfp:
+          header = kfp.read(len(KoshDB.FILE_HEADER))
+          if header != KoshDB.FILE_HEADER:
+            continue
+          self._read_lines_from_fp(kfp, key_filename, passphrases, prompt, visited)
+      except (IOError, OSError):
+        pass
+
+    self._read_lines_from_fp(self.fp, filename, passphrases, prompt, visited)
+
+    if self._unresolved_p_lines:
+      if self._masterKeys:
+        self._resolve_p_lines()
+      if self._unresolved_p_lines:
+        raise ChecksumFailure()
+
+  def _open_legacy(self, filename, prompt):
+    """
+    Original open flow (used when no unlock_prompt is provided).
+    Kept for backward compatibility and non-GUI use.
+    """
     passphrase = prompt('Enter passphrase:')
     passphrases = set()
     passphrases.add(passphrase)
 
-    # visited tracks files we have already read to prevent infinite redirect loops
     visited = set()
     visited.add(os.path.abspath(filename))
 
-    # Read explicitly specified key files first (e.g. from --keyfile CLI argument)
     for key_filename in self._explicit_key_files:
       expanded = os.path.expanduser(key_filename)
       abs_path = os.path.abspath(expanded)
@@ -638,7 +831,6 @@ class KoshDB(dict):
       except (IOError, OSError):
         pass
 
-    # Read *.key files found alongside the database (may contain k: entries or r: redirects)
     for key_filename in self._get_key_files(filename):
       abs_path = os.path.abspath(key_filename)
       if abs_path in visited:
@@ -653,18 +845,11 @@ class KoshDB(dict):
       except (IOError, OSError):
         pass
 
-    # Read main database file. For legacy single-file databases this also contains
-    # the k: master key entry; for split databases it has only p: entries.
-    # Any p: lines that can't be decrypted yet are buffered in _unresolved_p_lines.
     self._read_lines_from_fp(self.fp, filename, passphrases, prompt, visited)
 
-    # If no master key was found in any scanned file, ask the user where to find one.
-    # This handles cases such as the key file being on a USB stick, a network share,
-    # or any path that isn't auto-discovered by the *.key glob.
     if not self._masterKeys:
       self._request_key_file(filename, passphrases, prompt, visited)
 
-    # Retry any p: entries that couldn't be decrypted before a master key was available.
     if self._unresolved_p_lines:
       if self._masterKeys:
         self._resolve_p_lines()

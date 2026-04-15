@@ -156,6 +156,221 @@ class KeyFileDialog(urwid.WidgetWrap):
       return (self.path_edit.get_edit_text().strip(), self.remember_checkbox.get_state())
     return ('', False)
 
+class UnlockDialog(urwid.WidgetWrap):
+  """
+  Unified database unlock dialog.
+
+  Shows one row per discovered KeySource (passphrase field or unavailable
+  notice), plus an "Add key file" section at the bottom.  The dialog
+  validates credentials internally via KeySource.try_unlock() and only
+  closes once at least one key is successfully unlocked, or the user
+  presses Esc to cancel.
+
+  showModal() returns:
+    ([(KeySource, passphrase)], [(path, remember_bool)])
+      — successfully unlocked sources + any user-added file paths
+  or None if the user cancelled.
+
+  Designed to be extensible: future key types (FIDO2, etc.) just need
+  a new row widget type; the validation loop is unchanged.
+  """
+
+  WIDTH = 60
+
+  def __init__(self, key_sources, scan_key_file):
+    self._scan_key_file = scan_key_file
+    self._result = None        # set when dialog exits successfully
+    self._cancelled = False
+
+    self._walker = urwid.SimpleFocusListWalker([])
+    listbox = urwid.ListBox(self._walker)
+    urwid.WidgetWrap.__init__(self, urwid.LineBox(listbox))
+    self._rebuild(key_sources)
+
+  # ------------------------------------------------------------------
+  # Widget building helpers
+  # ------------------------------------------------------------------
+
+  def _rebuild(self, key_sources):
+    """(Re)build the walker contents from a list of KeySource objects."""
+    rows = []
+    rows.append(urwid.Text('Unlock database', align='center'))
+    rows.append(urwid.Divider('-'))
+
+    if not key_sources:
+      rows.append(urwid.Text('No key sources found.', align='center'))
+    else:
+      for ks in key_sources:
+        rows.extend(self._rows_for_source(ks))
+
+    rows.append(urwid.Divider('-'))
+    rows.extend(self._add_file_rows())
+    rows.append(urwid.Divider())
+    rows.append(urwid.Text('Enter to unlock  Esc to cancel', align='center'))
+
+    self._walker[:] = rows
+    # Focus first interactive widget
+    for i, w in enumerate(self._walker):
+      if self._is_focusable(w):
+        self._walker.set_focus(i)
+        break
+
+  def _rows_for_source(self, ks):
+    """Return a list of urwid widgets representing one KeySource row."""
+    from koshdb.koshdb import KeySource
+    if ks.source_type == KeySource.TYPE_PASSPHRASE:
+      return self._passphrase_rows(ks)
+    elif ks.source_type == KeySource.TYPE_UNAVAILABLE:
+      return self._unavailable_rows(ks)
+    # Unknown future type — show a placeholder
+    return [urwid.Text('Unknown key type: %s (%s)' % (ks.source_type, ks.source_file))]
+
+  def _passphrase_rows(self, ks):
+    edit = widgets.passwordEdit('')
+    edit._key_source = ks
+    error_text = urwid.Text('')
+    error_text._is_error = True   # marker so _set_error can find it
+    ks._edit        = edit
+    ks._error_widget = error_text
+    return [
+      urwid.Text('Passphrase for %s:' % ks.source_file),
+      edit,
+      error_text,
+    ]
+
+  def _unavailable_rows(self, ks):
+    retry_btn = urwid.Button('Retry')
+    urwid.connect_signal(retry_btn, 'click', self._on_retry, ks)
+    cols = urwid.Columns([
+      urwid.Text('Unavailable: %s\n  %s' % (ks.source_file, ks.error or '')),
+      ('fixed', 9, retry_btn),
+    ], dividechars=1)
+    ks._retry_widget = cols   # keep reference so we can replace it
+    return [cols]
+
+  def _add_file_rows(self):
+    self._add_path_edit = widgets.koshEdit('')
+    self._add_remember  = urwid.CheckBox('Remember (add r: redirect)')
+    self._add_files = []   # accumulated (path, remember) pairs
+    return [
+      urwid.Text('Add key file path (Enter to scan):'),
+      self._add_path_edit,
+      self._add_remember,
+    ]
+
+  @staticmethod
+  def _is_focusable(w):
+    return isinstance(w, (widgets.koshEdit, widgets.passwordEdit,
+                          urwid.CheckBox, urwid.Button))
+
+  # ------------------------------------------------------------------
+  # Event handlers
+  # ------------------------------------------------------------------
+
+  def _on_retry(self, button, ks):
+    """Re-scan an unavailable source; update its row on success."""
+    new_sources = self._scan_key_file(ks.source_file)
+    # Replace the old row widget(s) in the walker
+    try:
+      idx = self._walker.index(ks._retry_widget)
+    except ValueError:
+      return
+    new_rows = []
+    for ns in new_sources:
+      new_rows.extend(self._rows_for_source(ns))
+    self._walker[idx:idx+1] = new_rows
+
+  def _try_add_file(self):
+    """Scan the path in the add-file field and insert new source rows."""
+    path = self._add_path_edit.get_edit_text().strip()
+    if not path:
+      return
+    remember = self._add_remember.get_state()
+    self._add_files.append((path, remember))
+    self._add_path_edit.set_edit_text('')
+
+    new_sources = self._scan_key_file(path)
+    # Insert the new rows just before the bottom divider (3 rows from end:
+    # divider, hint text) — find the second-to-last Divider
+    insert_at = max(0, len(self._walker) - 3)
+    new_rows = []
+    for ns in new_sources:
+      new_rows.extend(self._rows_for_source(ns))
+    if new_rows:
+      self._walker[insert_at:insert_at] = new_rows
+
+  def _try_unlock(self):
+    """
+    Attempt to unlock with whatever passphrases have been filled in.
+    On success, sets self._result and raises ExitMainLoop.
+    On failure, annotates each failed passphrase row with an error.
+    """
+    from koshdb.koshdb import KeySource
+    unlocked = []
+    any_attempt = False
+
+    for w in self._walker:
+      if not isinstance(w, widgets.passwordEdit):
+        continue
+      ks = getattr(w, '_key_source', None)
+      if ks is None:
+        continue
+      passphrase = w.get_edit_text()
+      if not passphrase:
+        if hasattr(ks, '_error_widget'):
+          ks._error_widget.set_text('')
+        continue
+      any_attempt = True
+      try:
+        ks.try_unlock(passphrase)   # validates credential
+        unlocked.append((ks, passphrase))
+        if hasattr(ks, '_error_widget'):
+          ks._error_widget.set_text('')
+      except Exception:
+        if hasattr(ks, '_error_widget'):
+          ks._error_widget.set_text(('error', 'Incorrect passphrase'))
+
+    if unlocked:
+      self._result = (unlocked, self._add_files)
+      raise urwid.ExitMainLoop()
+
+    if not any_attempt:
+      # No passphrase was entered at all — show a hint rather than silently doing nothing
+      pass
+
+  # ------------------------------------------------------------------
+  # Input handling and modal loop
+  # ------------------------------------------------------------------
+
+  def keypress(self, size, key):
+    """Route Enter and Esc; let urwid handle everything else."""
+    if key == 'esc':
+      self._cancelled = True
+      raise urwid.ExitMainLoop()
+
+    if key == 'enter':
+      # If focus is on the add-file path field, scan it; otherwise try unlock
+      focus = self._walker.get_focus()[0]
+      if focus is self._add_path_edit:
+        self._try_add_file()
+        return
+      self._try_unlock()
+      return
+
+    return super().keypress(size, key)
+
+  def showModal(self, parent=None):
+    if parent is None:
+      parent = urwid.SolidFill()
+    # Calculate height: content rows + 2 for LineBox border
+    height = min(len(self._walker) + 2, 40)
+    overlay = urwid.Overlay(self, parent, 'center', self.WIDTH,
+                            'middle', height)
+    palette = [('error', 'dark red', '')]
+    urwid.MainLoop(overlay, palette=palette).run()
+    return None if self._cancelled else self._result
+
+
 if __name__=='__main__':
   d = inputDialog(message='Enter master password:', width=30)
   print(d.showModal())

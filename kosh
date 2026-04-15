@@ -95,13 +95,13 @@ def main():
   def prompt(message):
     dialog = koshcurses.dialog.inputDialog(message=message)
     return dialog.showModal()
-  key_file_dialog = koshcurses.dialog.KeyFileDialog()
-  def key_file_prompt(error=None):
-    return key_file_dialog.showModal(error=error)
+  def unlock_prompt(key_sources, scan_key_file):
+    dlg = koshcurses.dialog.UnlockDialog(key_sources, scan_key_file)
+    return dlg.showModal()
   try:
     db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt,
                        key_files=options.keyfiles,
-                       key_file_prompt=key_file_prompt)
+                       unlock_prompt=unlock_prompt)
     u = koshcurses.ui.koshUI(db)
     u.showModal()
   except koshdb.koshdb.FileLocked:
