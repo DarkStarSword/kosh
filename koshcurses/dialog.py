@@ -193,16 +193,31 @@ class UnlockDialog(urwid.WidgetWrap):
   # ------------------------------------------------------------------
 
   def _build(self, key_sources):
+    from koshdb.koshdb import KeySource
     rows = []
+    height = 2  # title + section divider
+
     rows.append(urwid.Text('Unlock database', align='center'))
     rows.append(urwid.Divider('-'))
 
-    if key_sources:
-      for ks in key_sources:
-        rows.extend(self._source_rows(ks))
+    # Sort: available passphrase sources first, unavailable sources below.
+    available   = [ks for ks in key_sources if ks.source_type == KeySource.TYPE_PASSPHRASE]
+    unavailable = [ks for ks in key_sources if ks.source_type != KeySource.TYPE_PASSPHRASE]
+    sorted_sources = available + unavailable
+
+    if sorted_sources:
+      for i, ks in enumerate(sorted_sources):
+        if i > 0:
+          rows.append(urwid.Divider())
+          height += 1
+        src_rows = self._source_rows(ks)
+        rows.extend(src_rows)
+        height += self._source_height(ks)
     else:
       rows.append(urwid.Text('No key sources found.', align='center'))
+      height += 1
 
+    height += 1  # section divider
     rows.append(urwid.Divider('-'))
 
     # Add-key-file section: Remember checkbox first so user sets it before
@@ -214,7 +229,9 @@ class UnlockDialog(urwid.WidgetWrap):
     self._path_cols = urwid.Columns(
         [self._add_path, ('fixed', 8, scan_btn)], dividechars=1)
     rows.extend([self._add_remember, self._path_cols])
+    height += 2  # remember checkbox + path/scan row
 
+    height += 2  # section divider + button row
     rows.append(urwid.Divider('-'))
 
     # Unlock / Quit buttons
@@ -224,6 +241,8 @@ class UnlockDialog(urwid.WidgetWrap):
         urwid.Padding(unlock_btn, 'center', 10),
         urwid.Padding(quit_btn,   'center', 8),
     ]))
+
+    self._height = height + 2  # +2 for LineBox border
 
     self._walker[:] = rows
     # Focus first passphrase field, falling back to first interactive widget
@@ -245,6 +264,15 @@ class UnlockDialog(urwid.WidgetWrap):
     if ks.source_type == KeySource.TYPE_UNAVAILABLE:
       return self._unavailable_rows(ks)
     return [urwid.Text('Unknown key type %r: %s' % (ks.source_type, ks.source_file))]
+
+  def _source_height(self, ks):
+    """Return the number of display rows consumed by one KeySource."""
+    from koshdb.koshdb import KeySource
+    if ks.source_type == KeySource.TYPE_PASSPHRASE:
+      return 3  # label + edit + error_text
+    if ks.source_type == KeySource.TYPE_UNAVAILABLE:
+      return 2  # Columns widget whose Text contains one '\n'
+    return 1    # unknown fallback
 
   def _passphrase_rows(self, ks):
     edit = widgets.passwordEdit('')
@@ -283,14 +311,17 @@ class UnlockDialog(urwid.WidgetWrap):
 
     new_sources = self._scan_key_file(path)
     # Insert new source rows just above the add-file section.
-    # The add-file section starts 4 rows before the end:
     #   divider, remember checkbox, path_cols, divider, button row  → 5 from end
     insert_at = max(0, len(self._walker) - 5)
-    new_rows = []
-    for ns in new_sources:
-      new_rows.extend(self._source_rows(ns))
-    if new_rows:
-      self._walker[insert_at:insert_at] = new_rows
+    insert_rows = []
+    for i, ns in enumerate(new_sources):
+      # Separate from whatever is already above (existing sources or the
+      # title/section divider) and between each newly inserted source.
+      if i > 0 or insert_at > 2:
+        insert_rows.append(urwid.Divider())
+      insert_rows.extend(self._source_rows(ns))
+    if insert_rows:
+      self._walker[insert_at:insert_at] = insert_rows
 
   def _on_retry(self, button, ks):
     """Re-scan an unavailable source; replace its row on success."""
@@ -366,7 +397,7 @@ class UnlockDialog(urwid.WidgetWrap):
   def showModal(self, parent=None):
     if parent is None:
       parent = urwid.SolidFill()
-    height = min(len(self._walker) + 2, 40)
+    height = min(self._height, 40)
     overlay = urwid.Overlay(self, parent, 'center', self.WIDTH,
                             'middle', height)
     palette = [('error', 'dark red', '')]
