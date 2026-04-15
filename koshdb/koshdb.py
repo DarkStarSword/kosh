@@ -515,16 +515,49 @@ class KoshDB(dict):
         self._lines.append((line, source))
     self._current_source = None
 
+  @staticmethod
+  def _is_windows_path(path):
+    """Return True if path looks like a Windows absolute path (drive letter or UNC)."""
+    import re
+    return bool(re.match(r'^[A-Za-z]:\\', path) or path.startswith('\\\\'))
+
+  @staticmethod
+  def _read_windows_path_via_cmd(path):
+    """
+    Read a Windows file path from within WSL2 by invoking cmd.exe.
+    Returns raw bytes of the file contents, or None on failure.
+    """
+    import subprocess
+    try:
+      result = subprocess.run(
+        ['cmd.exe', '/C', 'type', path],
+        capture_output=True,
+        timeout=5,
+      )
+      if result.returncode == 0 and result.stdout:
+        return result.stdout
+    except (OSError, subprocess.TimeoutExpired):
+      pass
+    return None
+
   def _follow_redirect(self, path, abs_path, passphrases, prompt, visited):
     """Follow an r: redirect to another key file; silently skip if unavailable."""
+    import io
+    data = None
     try:
       with open(path, 'rb') as kfp:
-        header = kfp.read(len(KoshDB.FILE_HEADER))
-        if header == KoshDB.FILE_HEADER:
-          visited.add(abs_path)
-          self._read_lines_from_fp(kfp, path, passphrases, prompt, visited)
+        data = kfp.read()
     except (IOError, OSError):
-      pass  # Silently skip (e.g. USB not mounted)
+      # Direct open failed — try cmd.exe fallback for Windows paths under WSL2
+      import version
+      if version.is_wsl() and self._is_windows_path(path):
+        data = self._read_windows_path_via_cmd(path)
+
+    if data is not None:
+      header_len = len(KoshDB.FILE_HEADER)
+      if data[:header_len] == KoshDB.FILE_HEADER:
+        visited.add(abs_path)
+        self._read_lines_from_fp(io.BytesIO(data[header_len:]), path, passphrases, prompt, visited)
 
   def _resolve_p_lines(self):
     """Attempt to decrypt p: lines that were buffered due to no available master key."""
