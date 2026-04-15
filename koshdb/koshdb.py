@@ -380,9 +380,17 @@ class KoshDB(dict):
     # Group lines by source file, preserving within-file order.
     # Skip readonly sources (e.g. Windows paths read via cmd.exe) — they cannot
     # be written back from Linux and their content is reconstructed on each open.
+    # Also remove any non-bytes objects from those skipped lines from entries so
+    # they don't cause AttributeError when passEntry.__eq__ encounters a masterKey
+    # during entries.remove() below.
     sources = {}
     for (line, source) in self._lines:
       if source in self._readonly_sources:
+        if type(line) != type(b''):
+          try:
+            entries.remove(line)
+          except ValueError:
+            pass
         continue
       if source not in sources:
         sources[source] = []
