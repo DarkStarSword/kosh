@@ -513,7 +513,12 @@ class KoshDB(dict):
           # once all key sources have been loaded (handles split databases where
           # the key file is discovered after the main db is read, and the
           # no-key-found interactive prompt).
-          self._unresolved_p_lines.append((line, source))
+          # Store a placeholder in _lines at this position so that when the entry
+          # is later resolved it can be put back in file order, preserving the
+          # relative positions of comment and other unrecognised lines.
+          placeholder_idx = len(self._lines)
+          self._lines.append((line, source))
+          self._unresolved_p_lines.append((line, source, placeholder_idx))
       elif line.startswith(self.REDIRECT_PREFIX):
         # r: lines point to additional key files (e.g. on a USB stick).
         # They are preserved verbatim and followed immediately.
@@ -575,7 +580,7 @@ class KoshDB(dict):
   def _resolve_p_lines(self):
     """Attempt to decrypt p: lines that were buffered due to no available master key."""
     remaining = []
-    for (line, source) in self._unresolved_p_lines:
+    for (line, source, placeholder_idx) in self._unresolved_p_lines:
       for key in self._masterKeys:
         try:
           entry = passEntry(key, line)
@@ -583,11 +588,22 @@ class KoshDB(dict):
           continue
         else:
           self._current_source = source
+          prev_len = len(self._lines)
           self[entry.name] = entry
+          if len(self._lines) > prev_len:
+            # __setitem__ appended one entry; move it to the placeholder position
+            # so the resolved entry sits in the same file position as the original
+            # raw bytes, preserving the order of comment and unrecognised lines.
+            self._lines[placeholder_idx] = self._lines.pop()
+          else:
+            # __setitem__ returned early (e.g. identical duplicate); the placeholder
+            # raw bytes at placeholder_idx are harmless — they'll be written back
+            # as-is, which is equivalent to the original unmodified line.
+            pass
           self._current_source = None
           break
       else:
-        remaining.append((line, source))
+        remaining.append((line, source, placeholder_idx))
     self._unresolved_p_lines = remaining
 
   def _open(self, filename, prompt):
@@ -814,9 +830,8 @@ class KoshDB(dict):
 
   def change_passphrase(self, new_passphrase):
     """Re-encrypt all master keys with a new passphrase, preserving their source files."""
-    # Find which sources hold master key blobs
-    key_sources = {src for (item, src) in self._lines
-                   if isinstance(item, bytes) and item.startswith(_masterKey.BLOB_PREFIX)}
+    # Find which sources hold master key objects
+    key_sources = {src for (item, src) in self._lines if isinstance(item, _masterKey)}
     readonly_key_sources = key_sources & self._readonly_sources
     if readonly_key_sources:
       raise ReadOnlySourceError(
