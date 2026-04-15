@@ -95,8 +95,10 @@ def main():
   def prompt(message):
     dialog = koshcurses.dialog.inputDialog(message=message)
     return dialog.showModal()
+  redir_key_name = os.path.basename(os.path.expanduser(options.passdb)) + '-redir.key'
   def unlock_prompt(key_sources, scan_key_file):
-    dlg = koshcurses.dialog.UnlockDialog(key_sources, scan_key_file)
+    dlg = koshcurses.dialog.UnlockDialog(key_sources, scan_key_file,
+                                          redir_key_name=redir_key_name)
     return dlg.showModal()
   try:
     db = koshdb.KoshDB(os.path.expanduser(options.passdb), prompt,
