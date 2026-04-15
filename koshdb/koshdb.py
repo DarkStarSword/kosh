@@ -45,6 +45,7 @@ class KeyExpired(Exception): pass
 class Bug(Exception): pass
 class ReadOnlyPassEntry(Exception): pass
 class FileLocked(Exception): pass
+class ReadOnlySourceError(Exception): pass
 
 # FIXME: HACK to work with pwsafe imported files for now:
 #passDefaultFieldOrder = ['Username','Password']
@@ -323,6 +324,7 @@ class KoshDB(dict):
     self._explicit_key_files = list(key_files) if key_files else []
     self._key_file_prompt = key_file_prompt  # optional: (error=None) -> (path, remember)
     self._unresolved_p_lines = []  # p: lines buffered when no master key was yet available
+    self._readonly_sources = set()  # sources that must not be written back (e.g. Windows paths)
 
     if os.path.isfile(filename):
       self._open(filename, prompt)
@@ -375,9 +377,13 @@ class KoshDB(dict):
 
     entries = copy(self._masterKeys) + list(self.values()) + copy(self._oldEntries)
 
-    # Group lines by source file, preserving within-file order
+    # Group lines by source file, preserving within-file order.
+    # Skip readonly sources (e.g. Windows paths read via cmd.exe) — they cannot
+    # be written back from Linux and their content is reconstructed on each open.
     sources = {}
     for (line, source) in self._lines:
+      if source in self._readonly_sources:
+        continue
       if source not in sources:
         sources[source] = []
       sources[source].append(line)
@@ -522,41 +528,40 @@ class KoshDB(dict):
     return bool(re.match(r'^[A-Za-z]:\\', path) or path.startswith('\\\\'))
 
   @staticmethod
-  def _read_windows_path_via_cmd(path):
+  def _try_read_file(path):
     """
-    Read a Windows file path from within WSL2 by invoking cmd.exe.
-    Returns raw bytes of the file contents, or None on failure.
+    Attempt to read a file, with a WSL2 cmd.exe fallback for Windows paths.
+    Returns (data_bytes, error_str): data is None on failure, error is None on success.
     """
-    import subprocess
+    import subprocess, version
     try:
-      result = subprocess.run(
-        ['cmd.exe', '/C', 'type', path],
-        capture_output=True,
-        timeout=5,
-      )
-      if result.returncode == 0 and result.stdout:
-        return result.stdout
-    except (OSError, subprocess.TimeoutExpired):
-      pass
-    return None
+      with open(path, 'rb') as f:
+        return (f.read(), None)
+    except (IOError, OSError) as e:
+      if version.is_wsl() and KoshDB._is_windows_path(path):
+        try:
+          result = subprocess.run(
+            ['cmd.exe', '/C', 'type', path],
+            capture_output=True,
+            timeout=5,
+          )
+          if result.returncode == 0 and result.stdout:
+            return (result.stdout, None)
+          return (None, 'cmd.exe could not read %s' % path)
+        except (OSError, subprocess.TimeoutExpired) as ce:
+          return (None, 'cmd.exe fallback failed for %s:\n%s' % (path, ce))
+      return (None, str(e))
 
   def _follow_redirect(self, path, abs_path, passphrases, prompt, visited):
     """Follow an r: redirect to another key file; silently skip if unavailable."""
     import io
-    data = None
-    try:
-      with open(path, 'rb') as kfp:
-        data = kfp.read()
-    except (IOError, OSError):
-      # Direct open failed — try cmd.exe fallback for Windows paths under WSL2
-      import version
-      if version.is_wsl() and self._is_windows_path(path):
-        data = self._read_windows_path_via_cmd(path)
-
+    (data, _err) = self._try_read_file(path)
     if data is not None:
       header_len = len(KoshDB.FILE_HEADER)
       if data[:header_len] == KoshDB.FILE_HEADER:
         visited.add(abs_path)
+        if self._is_windows_path(path):
+          self._readonly_sources.add(path)
         self._read_lines_from_fp(io.BytesIO(data[header_len:]), path, passphrases, prompt, visited)
 
   def _resolve_p_lines(self):
@@ -584,6 +589,7 @@ class KoshDB(dict):
     self._lines = []
     self._oldEntries = []
     self._unresolved_p_lines = []
+    self._readonly_sources = set()
     passphrase = prompt('Enter passphrase:')
     passphrases = set()
     passphrases.add(passphrase)
@@ -665,17 +671,19 @@ class KoshDB(dict):
         error = 'Already loaded: ' + expanded
         continue
 
-      try:
-        with open(expanded, 'rb') as kfp:
-          header = kfp.read(len(KoshDB.FILE_HEADER))
-          if header != KoshDB.FILE_HEADER:
-            error = 'Not a valid kosh key file:\n' + expanded
-            continue
-          visited.add(abs_path)
-          self._read_lines_from_fp(kfp, expanded, passphrases, prompt, visited)
-      except (IOError, OSError) as e:
-        error = 'Could not open %s:\n%s' % (expanded, e)
+      import io
+      (data, read_error) = self._try_read_file(expanded)
+      if data is None:
+        error = 'Could not open %s:\n%s' % (expanded, read_error)
         continue
+      header_len = len(KoshDB.FILE_HEADER)
+      if data[:header_len] != KoshDB.FILE_HEADER:
+        error = 'Not a valid kosh key file:\n' + expanded
+        continue
+      visited.add(abs_path)
+      if self._is_windows_path(expanded):
+        self._readonly_sources.add(expanded)
+      self._read_lines_from_fp(io.BytesIO(data[header_len:]), expanded, passphrases, prompt, visited)
 
       if not self._masterKeys:
         error = 'No master key found in:\n' + expanded
@@ -798,6 +806,15 @@ class KoshDB(dict):
 
   def change_passphrase(self, new_passphrase):
     """Re-encrypt all master keys with a new passphrase, preserving their source files."""
+    # Find which sources hold master key blobs
+    key_sources = {src for (item, src) in self._lines
+                   if isinstance(item, bytes) and item.startswith(_masterKey.BLOB_PREFIX)}
+    readonly_key_sources = key_sources & self._readonly_sources
+    if readonly_key_sources:
+      raise ReadOnlySourceError(
+        'Cannot change passphrase: master key is in a read-only source '
+        '(Windows path):\n' + '\n'.join(sorted(readonly_key_sources))
+      )
     new_keys = [key.reencrypt(new_passphrase) for key in self._masterKeys]
     key_map = {id(old): new for old, new in zip(self._masterKeys, new_keys)}
     self._lines = [(key_map.get(id(item), item), src) for (item, src) in self._lines]

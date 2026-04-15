@@ -794,7 +794,12 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
       self.status('Passphrases do not match, passphrase not changed')
       return
 
-    self.db.change_passphrase(new_pass)
+    import koshdb.koshdb as koshdb_mod
+    try:
+      self.db.change_passphrase(new_pass)
+    except koshdb_mod.ReadOnlySourceError as e:
+      self.status(str(e))
+      return
     self.db.write()
     self.status('Master passphrase changed')
 
