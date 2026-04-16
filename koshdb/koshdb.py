@@ -902,29 +902,38 @@ class KoshDB(dict):
         self._save_redirect(db_filename, path)
 
   def _save_redirect(self, db_filename, key_path):
-    """Store an r: redirect in a -redir.key file for future auto-discovery."""
+    """Store an r: redirect in a -redir.key file for future auto-discovery.
+
+    Preserves any existing entries in the file.  Does not add to self._lines
+    here: the unlock-dialog path re-reads the file in phase 3 (populating
+    _lines correctly), and the legacy path does not need _lines updated for
+    a file that write() won't otherwise touch.
+    """
     key_filename = db_filename + '-redir.key'
     redirect_line = (self.REDIRECT_PREFIX.decode() + key_path.strip() + '\n').encode('utf-8')
-    self._lines.append((redirect_line, key_filename))
-    # Write immediately so the redirect persists even if the user makes no other changes.
-    self._write_key_file(key_filename)
 
-  def _write_key_file(self, key_filename):
-    """Write one key file to disk immediately (used during startup, bypasses normal write path)."""
+    # Read existing entries so they are preserved in the rewrite.
+    existing_lines = []
+    if os.path.exists(key_filename):
+      try:
+        with open(key_filename, 'rb') as f:
+          data = f.read()
+        if data[:len(self.FILE_HEADER)] == self.FILE_HEADER:
+          existing_lines = data[len(self.FILE_HEADER):].splitlines(keepends=True)
+      except (IOError, OSError):
+        pass
+
+    # Write atomically: header + existing entries + new redirect line.
     from tempfile import NamedTemporaryFile
     dirname = os.path.dirname(os.path.abspath(key_filename))
     if not os.path.exists(dirname):
       os.makedirs(dirname, mode=0o700)
-    lines_for_file = [item for (item, src) in self._lines if src == key_filename]
     with NamedTemporaryFile(mode='wb', delete=False,
-        prefix=os.path.basename(key_filename),
-        dir=dirname) as tmp:
-      tmp.write(KoshDB.FILE_HEADER)
-      for line in lines_for_file:
-        if isinstance(line, bytes):
-          tmp.write(line)
-        else:
-          tmp.write(bytes(line).strip() + b'\n')
+        prefix=os.path.basename(key_filename), dir=dirname) as tmp:
+      tmp.write(self.FILE_HEADER)
+      for line in existing_lines:
+        tmp.write(line)
+      tmp.write(redirect_line)
       tmp.flush()
       tmp.close()
     if os.path.exists(key_filename):
@@ -932,6 +941,7 @@ class KoshDB(dict):
         os.remove(key_filename + '~')
       os.rename(key_filename, key_filename + '~')
     os.rename(tmp.name, key_filename)
+
 
   def __setitem__(self, name, val):
     assert(name == val.name)
