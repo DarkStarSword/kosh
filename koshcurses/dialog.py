@@ -277,7 +277,7 @@ class UnlockDialog(urwid.WidgetWrap):
 
     # Unlock / Load Keyfile... / Quit buttons
     unlock_btn   = urwid.Button('Unlock',        self._on_unlock)
-    keyfile_btn  = urwid.Button('Load Keyfile…', self._on_load_keyfile)
+    keyfile_btn  = urwid.Button('Load Key...', self._on_load_keyfile)
     quit_btn     = urwid.Button('Quit',          self._on_quit)
     rows.append(urwid.Columns([
         urwid.Padding(unlock_btn,  'center', 10),
