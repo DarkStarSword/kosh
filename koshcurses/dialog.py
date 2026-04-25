@@ -156,15 +156,70 @@ class KeyFileDialog(urwid.WidgetWrap):
       return (self.path_edit.get_edit_text().strip(), self.remember_checkbox.get_state())
     return ('', False)
 
+class AddKeyFileDialog(urwid.WidgetWrap):
+  """
+  Modal dialog for loading an additional key file into the unlock dialog.
+  showModal() returns (path, remember_bool) or None if cancelled.
+  """
+  WIDTH = 58
+
+  def __init__(self, redir_key_name='redir.key'):
+    self._result = None
+    self.path_edit = widgets.koshEdit('Path: ')
+    self.remember_checkbox = urwid.CheckBox('Save path to %s' % redir_key_name)
+    load_btn   = urwid.Button('Load',   self._on_load)
+    cancel_btn = urwid.Button('Cancel', self._on_cancel)
+    content = [
+      urwid.Text('Load additional key file', align='center'),
+      urwid.Divider('-'),
+      self.path_edit,
+      self.remember_checkbox,
+      urwid.Divider('-'),
+      urwid.Columns([
+        urwid.Padding(load_btn,   'center', 8),
+        urwid.Padding(cancel_btn, 'center', 10),
+      ]),
+    ]
+    self._height = len(content) + 2  # +2 for LineBox border
+    walker = urwid.SimpleFocusListWalker(content)
+    # Focus the path edit
+    walker.set_focus(2)
+    urwid.WidgetWrap.__init__(self, urwid.LineBox(urwid.ListBox(walker)))
+
+  def _on_load(self, button):
+    path = self.path_edit.get_edit_text().strip()
+    if path:
+      self._result = (path, self.remember_checkbox.get_state())
+      raise urwid.ExitMainLoop()
+
+  def _on_cancel(self, button):
+    raise urwid.ExitMainLoop()
+
+  def keypress(self, size, key):
+    if key == 'esc':
+      raise urwid.ExitMainLoop()
+    result = super().keypress(size, key)
+    if result == 'enter':
+      self._on_load(None)
+      return
+    return result
+
+  def showModal(self, parent=None):
+    if parent is None:
+      parent = urwid.SolidFill()
+    overlay = urwid.Overlay(self, parent, 'center', self.WIDTH, 'middle', self._height)
+    urwid.MainLoop(overlay).run()
+    return self._result
+
 class UnlockDialog(urwid.WidgetWrap):
   """
   Unified database unlock dialog.
 
   Shows one row per discovered KeySource (passphrase field or unavailable
-  notice), plus an "Add key file" section and Unlock/Quit buttons at the
-  bottom.  The dialog validates credentials internally via
-  KeySource.try_unlock() and only closes once at least one key is
-  successfully unlocked, or the user chooses Quit (or presses Esc).
+  notice), plus Unlock / Load Keyfile... / Quit buttons at the bottom.
+  The dialog validates credentials internally via KeySource.try_unlock() and
+  only closes once at least one key is successfully unlocked, or the user
+  chooses Quit (or presses Esc).
 
   showModal() returns:
     ([(KeySource, passphrase)], [(path, remember_bool)])
@@ -181,7 +236,7 @@ class UnlockDialog(urwid.WidgetWrap):
     self._redir_key_name = redir_key_name
     self._result      = None
     self._quit_requested = False
-    self._add_files   = []   # [(path, remember)] accumulated via Scan
+    self._add_files   = []   # [(path, remember)] accumulated via Load Keyfile
 
     self._walker = urwid.SimpleFocusListWalker([])
     listbox = urwid.ListBox(self._walker)
@@ -217,29 +272,17 @@ class UnlockDialog(urwid.WidgetWrap):
       rows.append(urwid.Text('No key sources found.', align='center'))
       height += 1
 
-    height += 1  # section divider
-    rows.append(urwid.Divider('-'))
-
-    # Add-key-file section: Remember checkbox first so user sets it before
-    # typing the path, making the association clear.
-    self._add_remember  = urwid.CheckBox(
-        'Save path to %s' % self._redir_key_name)
-    scan_btn = urwid.Button('Scan', self._on_scan)
-    self._add_path = widgets.koshEdit('Additional key file: ')
-    self._path_cols = urwid.Columns(
-        [self._add_path, ('fixed', 8, scan_btn)], dividechars=1)
-    rows.extend([self._add_remember, self._path_cols])
-    height += 2  # remember checkbox + path/scan row
-
     height += 2  # section divider + button row
     rows.append(urwid.Divider('-'))
 
-    # Unlock / Quit buttons
-    unlock_btn = urwid.Button('Unlock', self._on_unlock)
-    quit_btn   = urwid.Button('Quit',   self._on_quit)
+    # Unlock / Load Keyfile... / Quit buttons
+    unlock_btn   = urwid.Button('Unlock',        self._on_unlock)
+    keyfile_btn  = urwid.Button('Load Keyfile…', self._on_load_keyfile)
+    quit_btn     = urwid.Button('Quit',          self._on_quit)
     rows.append(urwid.Columns([
-        urwid.Padding(unlock_btn, 'center', 10),
-        urwid.Padding(quit_btn,   'center', 8),
+        urwid.Padding(unlock_btn,  'center', 10),
+        urwid.Padding(keyfile_btn, 'center', 15),
+        urwid.Padding(quit_btn,    'center', 8),
     ]))
 
     self._height = height + 2  # +2 for LineBox border
@@ -271,7 +314,7 @@ class UnlockDialog(urwid.WidgetWrap):
     if ks.source_type == KeySource.TYPE_PASSPHRASE:
       return 3  # label + edit + error_text
     if ks.source_type == KeySource.TYPE_UNAVAILABLE:
-      return 2  # Columns widget whose Text contains one '\n'
+      return 1  # single Columns row (error hidden until after Retry)
     return 1    # unknown fallback
 
   def _compute_height(self):
@@ -311,11 +354,15 @@ class UnlockDialog(urwid.WidgetWrap):
       error_text,
     ]
 
-  def _unavailable_rows(self, ks):
+  def _unavailable_rows(self, ks, show_error=False):
     retry_btn = urwid.Button('Retry')
     urwid.connect_signal(retry_btn, 'click', self._on_retry, ks)
+    if show_error and ks.error:
+      label = 'Unavailable: %s\n  %s' % (ks.source_file, ks.error)
+    else:
+      label = 'Unavailable: %s' % ks.source_file
     cols = urwid.Columns([
-      urwid.Text('Unavailable: %s\n  %s' % (ks.source_file, ks.error or '')),
+      urwid.Text(label),
       ('fixed', 9, retry_btn),
     ], dividechars=1)
     ks._retry_widget = cols
@@ -325,23 +372,21 @@ class UnlockDialog(urwid.WidgetWrap):
   # Event handlers
   # ------------------------------------------------------------------
 
-  def _on_scan(self, button):
-    """Scan the path in the add-file field; insert new source rows above."""
-    path = self._add_path.get_edit_text().strip()
-    if not path:
+  def _on_load_keyfile(self, button):
+    """Open the Add Key File dialog; insert any resulting sources."""
+    dialog = AddKeyFileDialog(self._redir_key_name)
+    result = dialog.showModal()
+    if not result:
       return
-    remember = self._add_remember.get_state()
+    path, remember = result
     self._add_files.append((path, remember))
-    self._add_path.set_edit_text('')
 
     new_sources = self._scan_key_file(path)
-    # Insert new source rows just above the add-file section.
-    #   divider, remember checkbox, path_cols, divider, button row  → 5 from end
-    insert_at = max(0, len(self._walker) - 5)
+    # Insert new source rows just above the section divider before the buttons
+    # (last 2 walker entries are: divider, button row)
+    insert_at = max(0, len(self._walker) - 2)
     insert_rows = []
     for i, ns in enumerate(new_sources):
-      # Separate from whatever is already above (existing sources or the
-      # title/section divider) and between each newly inserted source.
       if i > 0 or insert_at > 2:
         insert_rows.append(urwid.Divider())
       insert_rows.extend(self._source_rows(ns))
@@ -350,16 +395,20 @@ class UnlockDialog(urwid.WidgetWrap):
     self._refresh_overlay()
 
   def _on_retry(self, button, ks):
-    """Re-scan an unavailable source; replace its row on success."""
+    """Re-scan an unavailable source; replace its row on success or show error."""
     new_sources = self._scan_key_file(ks.source_file)
     # Use identity comparison — walker is a list but widget __eq__ is unreliable
     idx = next((i for i, w in enumerate(self._walker) if w is ks._retry_widget), None)
     if idx is None:
       return
-    new_rows = []
-    for ns in new_sources:
-      new_rows.extend(self._source_rows(ns))
-    self._walker[idx:idx+1] = new_rows or [ks._retry_widget]  # restore if still unavailable
+    if new_sources:
+      new_rows = []
+      for ns in new_sources:
+        new_rows.extend(self._source_rows(ns))
+      self._walker[idx:idx+1] = new_rows
+    else:
+      # Still unavailable — now show the error detail
+      self._walker[idx:idx+1] = self._unavailable_rows(ks, show_error=True)
     self._refresh_overlay()
 
   def _on_unlock(self, button):
@@ -406,13 +455,7 @@ class UnlockDialog(urwid.WidgetWrap):
     result = super().keypress(size, key)
 
     if result == 'enter':
-      # Determine whether focus is inside the path edit (column 0 of path_cols)
-      focused_top = self._walker.get_focus()[0]
-      if (focused_top is self._path_cols
-          and getattr(focused_top, 'focus_position', 1) == 0):
-        self._on_scan(None)
-      else:
-        self._on_unlock(None)
+      self._on_unlock(None)
       return   # consumed
 
     return result
