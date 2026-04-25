@@ -719,6 +719,7 @@ class koshUI(widgets.keymapwid, urwid.WidgetWrap):
 
   def showModal(self, parent=None):
     self.mainloop = urwid.MainLoop(self)
+    self.vi._outer_loop = self.mainloop
     self.tick()
     while True:
       try:

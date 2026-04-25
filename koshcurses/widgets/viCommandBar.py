@@ -58,6 +58,7 @@ class viCommandBar(urwid.WidgetWrap):
 
   def __init__(self, body, search_function=None):
     self._search_function = search_function
+    self._outer_loop = None  # set by caller after the outer MainLoop is created
     # Make an instance copy so register_command() doesn't mutate the class dict
     self.COMMANDS = dict(viCommandBar.COMMANDS)
 
@@ -207,6 +208,8 @@ class viCommandBar(urwid.WidgetWrap):
         contents += [urwid.Text('  %s - %s'%(key, self.KEYMAP[mode][key]))]
     container = urwid.ListBox(contents)
     urwid.MainLoop(container, unhandled_input = exit_on_input).run()
+    if self._outer_loop:
+      self._outer_loop.screen.clear()
 
   def displayVariables(self, vars):
     # FIXME: Display by main contents and handling special mode
@@ -229,6 +232,8 @@ class viCommandBar(urwid.WidgetWrap):
         contents += ['%s=%s'%(v,self.variables[v] if v in self.variables else '')]
     container = urwid.ListBox(list(map(urwid.Text,contents)))
     urwid.MainLoop(container, unhandled_input = exit_on_input).run()
+    if self._outer_loop:
+      self._outer_loop.screen.clear()
 
   def set_variable(self, args):
     if not args:
