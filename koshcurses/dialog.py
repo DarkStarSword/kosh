@@ -376,6 +376,9 @@ class UnlockDialog(urwid.WidgetWrap):
     """Open the Add Key File dialog; insert any resulting sources."""
     dialog = AddKeyFileDialog(self._redir_key_name)
     result = dialog.showModal()
+    # Inner MainLoop leaves the terminal dirty; force a full repaint.
+    if hasattr(self, '_loop'):
+      self._loop.screen.clear()
     if not result:
       return
     path, remember = result
