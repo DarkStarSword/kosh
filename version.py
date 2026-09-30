@@ -26,6 +26,67 @@ __version__ = 'v0.1 development' #FIXME: use git describe if from git repository
 
 HAS_TERMUX_API = False
 
+def get_venv_dir():
+  # The virtual environment, if any, lives in a hidden directory adjacent to
+  # the main kosh entry script.
+  return os.path.join(os.path.dirname(os.path.realpath(__file__)), '.venv')
+
+def venv_exists():
+  return os.path.isdir(get_venv_dir())
+
+def get_venv_python():
+  if sys.platform in ('win32', 'cygwin'):
+    return os.path.join(get_venv_dir(), 'Scripts', 'python.exe')
+  return os.path.join(get_venv_dir(), 'bin', 'python')
+
+def is_in_venv():
+  return sys.prefix != sys.base_prefix
+
+def activate_venv():
+  # Re-exec the main kosh entry script under the virtual environment's
+  # interpreter, preserving command line arguments. We return via sys.exit()
+  # with the child's return code.
+  entry = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'kosh')
+  if not os.path.exists(entry):
+    print('ERROR: unable to identify the main kosh entry script')
+    sys.exit(1)
+  venv_python =  get_venv_python()
+  if not os.path.exists(venv_python):
+    print('ERROR: virtual environment interpreter not found at %s' % venv_python)
+    sys.exit(1)
+  print('Restarting kosh in virtual environment...')
+  ret = subprocess.call([venv_python, entry] + sys.argv[1:])
+  sys.exit(ret)
+
+def ensure_venv():
+  if not venv_exists():
+    print('Creating virtual environment in %s' % get_venv_dir())
+    subprocess.call([sys.executable, '-m', 'venv', get_venv_dir()])
+  activate_venv()
+
+def install_to_venv(package, upgrade=False, uninstall=None):
+  # Install (or upgrade) a package. If running inside a virtual environment
+  # already, install directly into it. Otherwise (re)create one and re-exec
+  # into it, and let the restarted instance handle the installation - the
+  # user then confirms the installation a second time, which is acceptable
+  # since this happens once.
+  if is_in_venv():
+    if uninstall:
+      subprocess.call([sys.executable, '-m', 'pip', 'uninstall', uninstall])
+    cmd = [sys.executable, '-m', 'pip', 'install', package]
+    if upgrade:
+      cmd.append('--upgrade')
+    subprocess.call(cmd)
+  else:
+    ensure_venv()
+    # does not return - ensure_venv() re-execs into the virtual environment
+    sys.exit(1)
+
+def install_query(package, upgrade=False):
+  verb = 'Upgrade' if upgrade else 'Install'
+  scope = 'this virtual environment' if is_in_venv() else 'a virtual environment'
+  return '%s %s into %s? (y/n) ' % (verb, package, scope)
+
 def import_ask_install(module, package, msg, version_check=None, uninstall=None):
   ret = None
   try:
@@ -34,24 +95,18 @@ def import_ask_install(module, package, msg, version_check=None, uninstall=None)
       print(msg)
       answer = None
       while answer not in ('y', 'n'):
-        answer = input('Install %s with pip? (y/n) ' % package).lower()
+        answer = input(install_query(package)).lower()
       if answer == 'y':
-        subprocess.call([sys.executable] + "-m ensurepip --user".split())
-        if uninstall:
-          subprocess.call([sys.executable, "-m", "pip", "uninstall", uninstall])
-        subprocess.call([sys.executable, "-m", "pip", "install", package, "--user"])
+        install_to_venv(package, uninstall=uninstall)
         importlib.reload(site) # Ensure site-packages paths are up to date if pip just created it
         ret = __import__(module)
   if version_check is not None and not version_check(ret):
     print('%s version too old' % module)
     answer = None
     while answer not in ('y', 'n'):
-      answer = input('Upgrade %s with pip? (y/n) ' % package).lower()
+      answer = input(install_query(package, upgrade=True)).lower()
       if answer == 'y':
-        subprocess.call([sys.executable] + "-m ensurepip --user".split())
-        if uninstall:
-          subprocess.call([sys.executable, "-m", "pip", "uninstall", uninstall])
-        subprocess.call([sys.executable, "-m", "pip", "install", package, "--upgrade", "--user"])
+        install_to_venv(package, upgrade=True, uninstall=uninstall)
         importlib.reload(site) # Ensure site-packages paths are up to date if pip just created it
         ret = __import__(module)
   return ret

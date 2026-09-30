@@ -50,6 +50,15 @@ urwid_req_version = '0.9.9.1' # Fixme: what version is actually required?
 
 import version
 import os
+
+# If a virtual environment already exists for this installation and we are
+# not yet running inside it, activate by re-executing into it. Setups where
+# all packages are already available continue unchanged; installation
+# requests are handled by version.install_to_venv(), which likewise creates
+# one and re-executes if the user consents to installing.
+if not version.is_in_venv() and version.venv_exists():
+  version.activate_venv()
+
 __version__ = version.__version__
 version.checkCrypto()
 version.checkUrwid(urwid_req_version)
